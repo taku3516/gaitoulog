@@ -21,6 +21,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <!-- Sortable.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+    <!-- クラウド同期の設定値（未設定なら同期機能は無効のまま） -->
+    <script src="data/firebase-config.js"></script>
 </head>
 
 <body>
@@ -50,10 +53,16 @@
                 <span class="nav-icon">📊</span>
                 <span class="nav-label">分析</span>
             </button>
+            <button class="nav-btn" data-view="settings" id="nav-settings">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-label">設定</span>
+            </button>
         </nav>
     </div>
     <div id="toast" class="toast" aria-live="polite"></div>
     <script type="module" src="js/app.js"></script>
+    <!-- app.js より後に読み込む（ブリッジが用意されてから同期を開始するため） -->
+    <script type="module" src="js/sync/app-sync.js"></script>
 </body>
 
 </html>

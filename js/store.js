@@ -2,8 +2,9 @@
 import { enrichRecord } from './calculations.js';
 
 const DB_NAME = 'StreetActivityLogsDB';
-const DB_VERSION = 2; // Migrate from v1 if needed
+const DB_VERSION = 3; // v3: ログイン前のローカルデータを退避するストアを追加
 const STORE_NAME = 'records';
+const GUEST_STORE = 'guestRecords';
 
 // 複数議員対応
 const POLITICIAN_KEY = 'streetActivityLog_currentPoliticianId';
@@ -13,6 +14,22 @@ let currentPoliticianId = localStorage.getItem(POLITICIAN_KEY) || 'default';
 let politicians = JSON.parse(localStorage.getItem(ALL_POLITICIANS_KEY)) || [
     { id: 'default', name: '標準アカウント' }
 ];
+
+// ===== 変更通知 =====
+// 同期モジュールが「何がどう変わったか」を受け取るための購読口。
+// ストア自身はクラウドのことを一切知らない。
+const changeListeners = new Set();
+
+export function onChange(listener) {
+    changeListeners.add(listener);
+    return () => changeListeners.delete(listener);
+}
+
+function emitChange(event) {
+    changeListeners.forEach(fn => {
+        try { fn(event); } catch (e) { console.error('onChange listener failed:', e); }
+    });
+}
 
 export function getCurrentPoliticianId() {
     return currentPoliticianId;
@@ -29,8 +46,9 @@ export function getPoliticians() {
 
 export function addPolitician(name) {
     const id = 'pol_' + Date.now().toString(36);
-    politicians.push({ id, name });
+    politicians.push({ id, name, updatedAt: new Date().toISOString() });
     localStorage.setItem(ALL_POLITICIANS_KEY, JSON.stringify(politicians));
+    emitChange({ type: 'politicians', politicians: getPoliticians() });
     return id;
 }
 
@@ -39,7 +57,20 @@ export function removePolitician(id) {
     politicians = politicians.filter(p => p.id !== id);
     localStorage.setItem(ALL_POLITICIANS_KEY, JSON.stringify(politicians));
     if (currentPoliticianId === id) setCurrentPoliticianId('default');
+    emitChange({ type: 'politicians', politicians: getPoliticians(), removedId: id });
     return true;
+}
+
+/**
+ * アカウント一覧をまるごと差し替える（同期モジュール専用。変更通知は出さない）。
+ */
+export function replacePoliticians(list) {
+    if (!Array.isArray(list) || list.length === 0) return;
+    politicians = list;
+    localStorage.setItem(ALL_POLITICIANS_KEY, JSON.stringify(politicians));
+    if (!politicians.some(p => p.id === currentPoliticianId)) {
+        setCurrentPoliticianId(politicians[0]?.id || 'default');
+    }
 }
 
 function generateId() {
@@ -54,6 +85,9 @@ function initDB() {
             const db = e.target.result;
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains(GUEST_STORE)) {
+                db.createObjectStore(GUEST_STORE, { keyPath: 'id' });
             }
         };
         request.onsuccess = () => resolve(request.result);
@@ -125,7 +159,7 @@ export async function save(record) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(enriched);
-        tx.oncomplete = () => resolve(enriched);
+        tx.oncomplete = () => { emitChange({ type: 'upsert', records: [enriched] }); resolve(enriched); };
         tx.onerror = () => reject(tx.error);
     });
 }
@@ -139,19 +173,13 @@ export async function update(id, updates) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(updated);
-        tx.oncomplete = () => resolve(updated);
+        tx.oncomplete = () => { emitChange({ type: 'upsert', records: [updated] }); resolve(updated); };
         tx.onerror = () => reject(tx.error);
     });
 }
 
 export async function remove(id) {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
+    return bulkRemove([id]);
 }
 
 export async function bulkImport(newRecords) {
@@ -168,7 +196,7 @@ export async function bulkImport(newRecords) {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         enriched.forEach(r => store.put(r));
-        tx.oncomplete = () => resolve(enriched.length);
+        tx.oncomplete = () => { emitChange({ type: 'upsert', records: enriched }); resolve(enriched.length); };
         tx.onerror = () => reject(tx.error);
     });
 }
@@ -179,7 +207,88 @@ export async function bulkRemove(ids) {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         ids.forEach(id => store.delete(id));
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => { emitChange({ type: 'delete', ids }); resolve(); };
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// ===== ログイン前ローカルデータの退避 / 復元 =====
+// ログイン中はクラウドの内容をローカルへ写して表示する。
+// ログアウトしたときにログイン前の状態へ正確に戻せるよう、
+// クラウドに切り替える直前のデータを別ストアへ退避しておく。
+
+const GUEST_POLITICIANS_KEY = 'streetActivityLog_guestPoliticians';
+const GUEST_STASHED_KEY = 'streetActivityLog_guestStashed';
+
+export function hasGuestSnapshot() {
+    return localStorage.getItem(GUEST_STASHED_KEY) === 'true';
+}
+
+/** 現在のローカルデータをゲスト用ストアへ退避する（既に退避済みなら何もしない） */
+export async function stashGuestSnapshot() {
+    if (hasGuestSnapshot()) return;
+    const records = await getAllRaw();
+    const db = await initDB();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(GUEST_STORE, 'readwrite');
+        const guest = tx.objectStore(GUEST_STORE);
+        guest.clear();
+        records.forEach(r => guest.put(r));
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+    localStorage.setItem(GUEST_POLITICIANS_KEY, JSON.stringify(politicians));
+    localStorage.setItem(GUEST_STASHED_KEY, 'true');
+}
+
+/** 退避しておいたゲスト状態を読み出す（マージ処理用） */
+export async function getGuestSnapshot() {
+    if (!hasGuestSnapshot()) return null;
+    const db = await initDB();
+    const records = await new Promise((resolve, reject) => {
+        const tx = db.transaction(GUEST_STORE, 'readonly');
+        const req = tx.objectStore(GUEST_STORE).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+    let guestPoliticians = [];
+    try { guestPoliticians = JSON.parse(localStorage.getItem(GUEST_POLITICIANS_KEY)) || []; } catch { /* 破損時は空扱い */ }
+    return { records, politicians: guestPoliticians };
+}
+
+/** ゲスト状態へ戻し、クラウド由来のデータをこの端末から消す */
+export async function restoreGuestSnapshot() {
+    // 退避が無いのに実行すると、現在のデータを消してしまうので必ず確認する
+    if (!hasGuestSnapshot()) return false;
+    const snapshot = await getGuestSnapshot();
+    const db = await initDB();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_NAME, GUEST_STORE], 'readwrite');
+        const main = tx.objectStore(STORE_NAME);
+        main.clear();
+        (snapshot?.records || []).forEach(r => main.put(r));
+        tx.objectStore(GUEST_STORE).clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+    if (snapshot?.politicians?.length) replacePoliticians(snapshot.politicians);
+    localStorage.removeItem(GUEST_POLITICIANS_KEY);
+    localStorage.removeItem(GUEST_STASHED_KEY);
+    return true;
+}
+
+/**
+ * クラウドの内容でローカルの表示用データを差し替える（同期モジュール専用）。
+ * 変更通知は出さない（クラウドへの書き戻しループを避けるため）。
+ */
+export async function replaceAllRecords(records) {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const main = tx.objectStore(STORE_NAME);
+        main.clear();
+        records.forEach(r => main.put(r));
+        tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
     });
 }
