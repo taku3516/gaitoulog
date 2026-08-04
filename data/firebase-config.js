@@ -10,18 +10,17 @@
 // 設定手順は docs/firebase-sync-setup.md を参照。
 
 window.GAITOULOG_FIREBASE_SYNC = Object.freeze({
-    // 設定値を貼り終えるまでは false のままにしておく。
-    // false の間は同期UIが一切表示されず、アプリは従来どおり動作する。
-    enabled: false,
+    // false にすると同期UIが一切表示されず、アプリは従来どおり動作する。
+    enabled: true,
 
     sdkVersion: '12.16.0',
 
     firebaseConfig: Object.freeze({
-        apiKey: '',
-        authDomain: '',
-        projectId: '',
-        appId: '',
-        messagingSenderId: '',
+        apiKey: 'AIzaSyD5ATQmwYmoYur31NxfdOl_WxQbup0a3jE',
+        authDomain: 'gaitoulog.firebaseapp.com',
+        projectId: 'gaitoulog',
+        appId: '1:1054043325148:web:faf7b49a8b0fc85c056a19',
+        messagingSenderId: '1054043325148',
     }),
 
     // App Check（reCAPTCHA Enterprise）を使う場合のみ true にする
