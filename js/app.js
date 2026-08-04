@@ -5,6 +5,8 @@ import * as inputForm from './views/input-form.js';
 import * as listView from './views/list-view.js';
 import * as recommendView from './views/recommendations.js';
 import * as dashboard from './views/dashboard.js';
+import * as settingsView from './views/settings.js';
+import * as syncBridge from './sync/bridge.js';
 
 let currentView = 'input';
 const mainContent = document.getElementById('main-content');
@@ -58,6 +60,7 @@ let isSwitching = false;
 async function switchView(view, editId = null) {
     if (isSwitching && view !== currentView) return;
     isSwitching = true;
+    if (currentView === 'settings' && view !== 'settings') settingsView.dispose();
     currentView = view;
     document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
     
@@ -88,6 +91,9 @@ async function switchView(view, editId = null) {
             case 'dashboard':
                 await dashboard.render(mainContent);
                 break;
+            case 'settings':
+                await settingsView.render(mainContent);
+                break;
         }
     } catch(err) {
         console.error('Error rendering view:', err);
@@ -105,6 +111,15 @@ document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click
     try {
         await store.initIfEmpty(generateDummyData());
         await switchView('input');
+
+        // クラウド由来でデータが入れ替わったら、アカウント一覧と表示中の画面を作り直す
+        syncBridge.onCloudStateApplied(async () => {
+            renderPoliticianSelect();
+            // 入力途中の内容を消さないよう、入力画面と設定画面は作り直さない
+            if (currentView !== 'settings' && currentView !== 'input') {
+                await switchView(currentView);
+            }
+        });
     } catch(e) {
         console.error('App init failed:', e);
     }

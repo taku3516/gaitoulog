@@ -1,0 +1,113 @@
+rules_version = '2';
+
+// 街頭活動ログ - Firestore セキュリティルール
+//
+// 方針:
+//   - 既定はすべて拒否。認証済み本人の users/{uid} 配下だけを許可する。
+//   - Googleログイン以外のプロバイダは受け付けない。
+//   - フィールド構成・型・件数・文字数・schemaVersion をサーバー側でも検証する
+//     （クライアント側の正規化と同じ制約を二重にかける）。
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isValidId(docId) {
+      return docId.size() > 0 && docId.size() <= 80 && docId.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    // 数値項目: 数値であること、負でないこと、上限内であること
+    function okNum(data, field, maxValue) {
+      return !(field in data)
+        || (data[field] is number && data[field] >= 0 && data[field] <= maxValue);
+    }
+
+    // 文字列項目: 文字列であること、文字数上限内であること
+    function okStr(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    // 配列項目: 配列であること、件数上限内であること
+    function okList(data, field, maxLen) {
+      return !(field in data) || (data[field] is list && data[field].size() <= maxLen);
+    }
+
+    // ---------- 活動記録 ----------
+    match /users/{userId}/records/{recordId} {
+
+      function validRecord() {
+        let d = request.resource.data;
+        return d.keys().hasOnly([
+            'id', 'politicianId', 'schemaVersion', 'syncedAt', 'createdAt', 'updatedAt',
+            'date', 'dayOfWeek', 'yearMonth', 'startTime', 'endTime', 'nextDay', 'hour', 'duration',
+            'area', 'spot',
+            'distributionCount', 'distributionRate', 'acceptRate',
+            'volunteerCount', 'volunteerNames',
+            'weather', 'temperature',
+            'formType', 'micType', 'groupType',
+            'themes', 'materials',
+            'approachCount', 'stopCount', 'refusalCount',
+            'newContactCount', 'donationCount', 'qrCount',
+            'hasTrouble', 'troubleNote', 'memo'
+          ])
+          // 必須項目
+          && d.schemaVersion == 1
+          && d.syncedAt == request.time
+          && d.id == recordId
+          && d.politicianId is string && d.politicianId.size() <= 80
+          && d.date is string && d.date.size() <= 10
+          && d.area is string && d.area.size() > 0 && d.area.size() <= 100
+          && d.spot is string && d.spot.size() > 0 && d.spot.size() <= 100
+          && d.distributionCount is number && d.distributionCount >= 0 && d.distributionCount <= 1000000
+          // 任意項目
+          && okStr(d, 'dayOfWeek', 2) && okStr(d, 'yearMonth', 7)
+          && okStr(d, 'startTime', 5) && okStr(d, 'endTime', 5)
+          && okStr(d, 'weather', 20) && okStr(d, 'formType', 20)
+          && okStr(d, 'micType', 20) && okStr(d, 'groupType', 20)
+          && okStr(d, 'volunteerNames', 500)
+          && okStr(d, 'troubleNote', 1000) && okStr(d, 'memo', 2000)
+          && okStr(d, 'createdAt', 30) && okStr(d, 'updatedAt', 30)
+          && okNum(d, 'hour', 47) && okNum(d, 'duration', 100000)
+          && okNum(d, 'distributionRate', 100000) && okNum(d, 'acceptRate', 100000)
+          && okNum(d, 'volunteerCount', 100000)
+          && okNum(d, 'approachCount', 1000000) && okNum(d, 'stopCount', 1000000)
+          && okNum(d, 'refusalCount', 1000000) && okNum(d, 'newContactCount', 1000000)
+          && okNum(d, 'donationCount', 1000000) && okNum(d, 'qrCount', 1000000)
+          && (!('temperature' in d) || d.temperature is number)
+          && (!('nextDay' in d) || d.nextDay is bool)
+          && (!('hasTrouble' in d) || d.hasTrouble is bool)
+          && okList(d, 'themes', 30) && okList(d, 'materials', 30);
+      }
+
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidId(recordId) && validRecord();
+    }
+
+    // ---------- アカウント（議員）一覧 ----------
+    match /users/{userId}/politicians/{politicianId} {
+
+      function validPolitician() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['id', 'name', 'updatedAt', 'schemaVersion', 'syncedAt'])
+          && d.schemaVersion == 1
+          && d.syncedAt == request.time
+          && d.id == politicianId
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+          && okStr(d, 'updatedAt', 30);
+      }
+
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidId(politicianId) && validPolitician();
+    }
+
+    // ---------- それ以外はすべて拒否 ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
