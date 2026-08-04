@@ -6,12 +6,12 @@ import { parseCSV, readCSVFile } from '../utils/csv-import.js';
 export async function render(container, { onEdit }) {
     const areas = await store.getUniqueAreas();
     let filterPeriod = 'all', sortBy = 'date-desc', customStart = '', customEnd = '';
-    
+
     // 3-1. 複数選択用配列
     let selectedAreas = [];
     let selectedWeathers = [];
     let selectedForDelete = new Set();
-    
+
     let allRecords = await store.getAll();
 
     function toggleSelection(array, item) {
@@ -34,7 +34,7 @@ export async function render(container, { onEdit }) {
         } else if (filterPeriod === 'custom' && customStart && customEnd) {
             filtered = filtered.filter(r => r.date >= customStart && r.date <= customEnd);
         }
-        
+
         if (selectedAreas.length > 0) filtered = filtered.filter(r => selectedAreas.includes(r.area));
         if (selectedWeathers.length > 0) filtered = filtered.filter(r => selectedWeathers.includes(r.weather));
 
@@ -77,7 +77,7 @@ export async function render(container, { onEdit }) {
         document.querySelectorAll('.filter-weather-btn').forEach(btn => btn.addEventListener('click', () => toggleSelection(selectedWeathers, btn.dataset.val)));
 
         const filtered = applyFilters();
-        
+
         // 3-2. 一括削除UI
         document.getElementById('list-results').innerHTML = filtered.length === 0 ? `
       <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">記録がありません</div></div>
@@ -102,12 +102,15 @@ export async function render(container, { onEdit }) {
         </div>
       </div>
     `).join('');
-    
+
         document.getElementById('list-count').textContent = `${filtered.length}件`;
-        
+
         // Edit entry action
-        document.querySelectorAll('.list-card-content').forEach(card => card.addEventListener('click', () => onEdit(card.dataset.id)));
-        
+        document.querySelectorAll('.list-card-content').forEach(card => card.addEventListener('click', () => {
+             const record = allRecords.find(r => r.id === card.dataset.id);
+             if (record) showDetailModal(record);
+        }));
+
         // Checkbox state tracking
         document.querySelectorAll('.bulk-cb').forEach(cb => {
             cb.addEventListener('change', (e) => {
@@ -118,6 +121,51 @@ export async function render(container, { onEdit }) {
             });
         });
         updateBulkActionUI();
+    }
+
+    function showDetailModal(record) {
+        let modal = document.getElementById('detail-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'detail-modal';
+            modal.style = 'position:fixed; top:0; left:0; right:0; bottom:0; z-index:1000; background:rgba(0,0,0,0.5); display:flex; align-items:flex-end;';
+            document.body.appendChild(modal);
+        }
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div style="background:var(--bg-card); width:100%; border-radius:var(--radius-lg) var(--radius-lg) 0 0; padding:var(--spacing-lg); padding-bottom:calc(var(--spacing-xl) + var(--safe-bottom)); animation: slideUp 0.3s ease;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:var(--spacing-md);">
+                    <div>
+                        <div style="font-size:var(--font-size-lg); font-weight:700;">${record.spot}</div>
+                        <div style="font-size:var(--font-size-sm); color:var(--text-muted);">${record.date} (${record.dayOfWeek})</div>
+                    </div>
+                    <button id="close-modal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+                </div>
+                <div style="background:var(--bg-input); border-radius:var(--radius-md); padding:var(--spacing-md); margin-bottom:var(--spacing-lg); display:grid; grid-template-columns:1fr 1fr; gap:var(--spacing-md);">
+                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">配布枚数</span><br><span style="font-weight:700;">${record.distributionCount}</span> 枚</div>
+                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">配布効率</span><br><span style="font-weight:700;">${record.distributionRate || '-'}</span> 枚/分</div>
+                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">活動時間</span><br><span style="font-weight:700;">${record.duration || '-'}</span> 分</div>
+                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">天候</span><br><span style="font-weight:700;">${record.weather || '-'}</span></div>
+                </div>
+                ${record.memo ? `<div style="margin-bottom:var(--spacing-lg);"><span style="font-size:var(--font-size-xs); color:var(--text-muted);">メモ</span><br><p style="font-size:var(--font-size-sm);">${record.memo}</p></div>` : ''}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--spacing-md);">
+                    <button id="modal-edit" class="btn btn-primary">✏️ 編集する</button>
+                    <button id="modal-delete" class="btn btn-secondary" style="color:var(--accent-error); border-color:var(--accent-error);">🗑️ 削除</button>
+                </div>
+            </div>
+        `;
+
+        modal.querySelector('#close-modal').addEventListener('click', () => modal.style.display = 'none');
+        modal.addEventListener('click', (e) => { if(e.target === modal) modal.style.display = 'none'; });
+        modal.querySelector('#modal-edit').addEventListener('click', () => { modal.style.display = 'none'; onEdit(record.id); });
+        modal.querySelector('#modal-delete').addEventListener('click', async () => {
+            if(confirm('この記録を削除しますか？')) {
+                await store.remove(record.id);
+                modal.style.display = 'none';
+                allRecords = await store.getAll();
+                renderList();
+            }
+        });
     }
 
     function updateBulkActionUI() {
@@ -135,23 +183,23 @@ export async function render(container, { onEdit }) {
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <div class="section-title" style="margin-bottom:0; border:none; padding:0;">📋 活動一覧</div>
         <div style="font-size:0.8rem; color:var(--text-muted);">
-           👤 ${store.POLITICIANS.find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
+           👤 ${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
         </div>
       </div>
       <hr style="border:0; border-top:2px solid var(--border-color); margin: 8px 0 16px 0;">
-      
+
       <div class="filter-bar" style="align-items:flex-start;">
         <select class="filter-select" id="filter-period"><option value="all">全期間</option><option value="this-month">今月</option><option value="last-month">先月</option><option value="custom">期間指定</option></select>
         <select class="filter-select" id="filter-sort"><option value="date-desc">新しい順</option><option value="date-asc">古い順</option><option value="rate-desc">配布係数順</option><option value="count-desc">配布枚数順</option><option value="duration-desc">活動時間順</option></select>
       </div>
-      
+
       <div id="custom-range" style="display:none; margin-bottom: var(--spacing-md);">
         <div class="form-row">
           <div class="form-group"><label class="form-label">開始日</label><input type="date" class="form-input" id="filter-start" /></div>
           <div class="form-group"><label class="form-label">終了日</label><input type="date" class="form-input" id="filter-end" /></div>
         </div>
       </div>
-      
+
       <!-- 3-1 Multi Selector Area -->
       <div id="multi-filters-container" style="margin-bottom: var(--spacing-md); padding-bottom: 12px; border-bottom: 1px solid var(--border-color);"></div>
 
@@ -165,18 +213,18 @@ export async function render(container, { onEdit }) {
         </div>
       </div>
       <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
-      
+
       <div id="list-results"></div>
     </div>
   `;
 
     document.getElementById('filter-period').addEventListener('change', (e) => { filterPeriod = e.target.value; document.getElementById('custom-range').style.display = filterPeriod === 'custom' ? 'block' : 'none'; renderList(); });
     document.getElementById('filter-sort').addEventListener('change', (e) => { sortBy = e.target.value; renderList(); });
-    
+
     const si = document.getElementById('filter-start'), ei = document.getElementById('filter-end');
     if (si) si.addEventListener('change', () => { customStart = si.value; renderList(); });
     if (ei) ei.addEventListener('change', () => { customEnd = ei.value; renderList(); });
-    
+
     document.getElementById('btn-export').addEventListener('click', () => { const f = applyFilters(); if (f.length === 0) { alert('エクスポートするデータがありません。'); return; } exportToCSV(f); });
 
     // 3-2 Bulk Delete
@@ -192,7 +240,7 @@ export async function render(container, { onEdit }) {
         const filtered = applyFilters();
         if (filtered.length === 0) return;
         if (!confirm(`!!警告!!\n\n現在表示されている ${filtered.length} 件の記録をすべて削除しますか？\n対象議員: ${store.getCurrentPoliticianId()}`)) return;
-        
+
         await store.bulkRemove(filtered.map(r => r.id));
         selectedForDelete.clear();
         allRecords = await store.getAll();

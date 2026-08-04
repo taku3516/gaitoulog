@@ -1,5 +1,22 @@
-const CACHE_NAME = 'street-activity-log-v2';
-const STATIC_ASSETS = ['/', '/index.html', '/css/style.css', '/js/app.js'];
+const CACHE_NAME = 'street-activity-log-v3';
+const STATIC_ASSETS = [
+    './',
+    './index.html',
+    './manifest.json',
+    './css/style.css',
+    './js/app.js',
+    './js/store.js',
+    './js/calculations.js',
+    './js/dummy-data.js',
+    './js/validation.js',
+    './js/utils/csv-export.js',
+    './js/utils/csv-import.js',
+    './js/views/input-form.js',
+    './js/views/list-view.js',
+    './js/views/recommendations.js',
+    './js/views/dashboard.js',
+    './assets/icons/icon.svg'
+];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)));

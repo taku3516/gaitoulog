@@ -109,12 +109,6 @@ export async function render(container, { onSaved }) {
             </div>
           </div>
 
-          <!-- 1-3. 提案機能UIエリア -->
-          <div id="recommendation-area" style="display:none; margin: var(--spacing-sm) 0 var(--spacing-md) 0; padding: var(--spacing-sm); background: var(--bg-hover); border: 1px dashed var(--border-active); border-radius: var(--radius-md);">
-              <div style="font-size: var(--font-size-xs); font-weight: 600; color: var(--accent-primary); margin-bottom: 4px;">💡 おすすめ活動候補</div>
-              <div id="recommendation-list" style="display:flex; flex-direction:column; gap:8px;"></div>
-          </div>
-
           <div class="form-group">
             <label class="form-label">配布枚数<span class="required">*</span></label>
             <input type="number" class="form-input" id="f-distributionCount" inputmode="numeric" min="0" value="${record?.distributionCount ?? ''}" placeholder="0" />
@@ -201,10 +195,12 @@ export async function render(container, { onSaved }) {
 
         <div id="form-warnings" style="display:none;" class="card"></div>
 
-        <button type="submit" class="btn btn-primary btn-full" id="btn-save" style="margin-bottom: var(--spacing-md);">
-          💾 ${isEdit ? '更新する' : '保存する'}
-        </button>
-        ${isEdit ? '<button type="button" class="btn btn-danger btn-full" id="btn-delete">🗑️ この記録を削除</button>' : ''}
+        <div style="margin-top: var(--spacing-xl); padding-bottom: calc(var(--spacing-2xl) + var(--safe-bottom));">
+          <button type="submit" class="btn btn-primary btn-full" id="btn-save" style="margin-bottom: var(--spacing-md); height: 56px; font-size: var(--font-size-lg);">
+            💾 ${isEdit ? '更新する' : '保存する'}
+          </button>
+          ${isEdit ? '<button type="button" class="btn btn-danger btn-full" id="btn-delete" style="height: 56px; font-size: var(--font-size-lg);">🗑️ この記録を削除</button>' : ''}
+        </div>
       </form>
     </div>
   `;
@@ -226,7 +222,6 @@ export async function render(container, { onSaved }) {
                 container.querySelectorAll('#quick-locations .tag').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
             }
-            updateRecommendations();
         });
     });
 
@@ -246,91 +241,6 @@ export async function render(container, { onSaved }) {
     if (deleteBtn) deleteBtn.addEventListener('click', async () => {
         if (confirm('この記録を削除しますか？')) { await store.remove(editingId); editingId = null; onSaved('deleted'); }
     });
-
-    // 提案機能(1-3)用イベントリスナ
-    const rInputs = ['f-date', 'f-startTime', 'f-area', 'f-spot'];
-    rInputs.forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.addEventListener('change', updateRecommendations);
-    });
-    const spotEl = document.getElementById('f-spot');
-    if(spotEl) spotEl.addEventListener('input', updateRecommendations); // キーストロークでも反応
-
-    // 初回レンダリング時にも提案計算を実行
-    updateRecommendations();
-}
-
-// 1-3. 提案機能
-function updateRecommendations() {
-    const area = document.getElementById('f-area')?.value;
-    const spot = document.getElementById('f-spot')?.value;
-    const dateStr = document.getElementById('f-date')?.value;
-    const startStr = document.getElementById('f-startTime')?.value;
-    
-    if (!dateStr || !startStr) return; // 日付時間が必須
-
-    const d = new Date(dateStr);
-    const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-    const hour = parseInt(startStr.split(':')[0], 10);
-
-    // Filter logic
-    let candidates = allRecordsCache.filter(r => {
-        let score = 0;
-        if (r.dayOfWeek === dayOfWeek) score += 1;
-        if (r.hour != null && Math.abs(r.hour - hour) <= 2) score += 1;
-        if (area && r.area === area) score += 2;
-        if (spot && r.spot === spot) score += 3;
-        r._matchScore = score;
-        return score >= 2; // 関連性のあるものだけ
-    });
-
-    if (candidates.length === 0) {
-        document.getElementById('recommendation-area').style.display = 'none';
-        return;
-    }
-
-    // Spot単位で重複除去しつつ、一番いい実績を採用
-    const bestBySpot = {};
-    for (const c of candidates) {
-        const key = `${c.area}|${c.spot}`;
-        const prev = bestBySpot[key];
-        const rate = c.distributionRate || 0;
-        if (!prev || rate > (prev.distributionRate || 0)) {
-            bestBySpot[key] = c;
-        }
-    }
-
-    // Sort by distributionRate DESC and Score DESC
-    const sorted = Object.values(bestBySpot).sort((a, b) => {
-        return (b.distributionRate || 0) - (a.distributionRate || 0) || b._matchScore - a._matchScore;
-    }).slice(0, 3);
-
-    if (sorted.length > 0) {
-        const container = document.getElementById('recommendation-list');
-        container.innerHTML = sorted.map(r => `
-            <div style="background: var(--bg-card); padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
-                <div>
-                    <span style="font-weight:700; color:var(--text-primary);">${r.spot}</span> <span style="font-size:0.75rem; color:var(--text-muted);">(${r.area})</span><br>
-                    <span style="color:var(--text-secondary);"><span style="color:var(--accent-primary);font-weight:600;">${r.distributionRate || 0}</span>枚/分 (計${r.distributionCount}枚)</span>
-                </div>
-                <button type="button" class="btn btn-sm btn-secondary apply-rec-btn" data-area="${r.area}" data-spot="${r.spot}" style="min-height:28px; padding: 4px 10px;">適用</button>
-            </div>
-        `).join('');
-        document.getElementById('recommendation-area').style.display = 'block';
-
-        container.querySelectorAll('.apply-rec-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.getElementById('f-area').value = e.target.dataset.area;
-                document.getElementById('f-spot').value = e.target.dataset.spot;
-                // Quick Tagの選択状態も更新
-                document.querySelectorAll('#quick-locations .tag').forEach(t => {
-                    t.classList.toggle('selected', t.dataset.area === e.target.dataset.area && t.dataset.spot === e.target.dataset.spot);
-                });
-            });
-        });
-    } else {
-        document.getElementById('recommendation-area').style.display = 'none';
-    }
 }
 
 function getFormData() {

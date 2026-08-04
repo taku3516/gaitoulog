@@ -19,6 +19,8 @@
 
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <!-- Sortable.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 </head>
 
 <body>
@@ -40,9 +42,13 @@
                 <span class="nav-icon">📋</span>
                 <span class="nav-label">一覧</span>
             </button>
+            <button class="nav-btn" data-view="recommend" id="nav-recommend">
+                <span class="nav-icon">💡</span>
+                <span class="nav-label">提案</span>
+            </button>
             <button class="nav-btn" data-view="dashboard" id="nav-dashboard">
                 <span class="nav-icon">📊</span>
-                <span class="nav-label">ダッシュボード</span>
+                <span class="nav-label">分析</span>
             </button>
         </nav>
     </div>

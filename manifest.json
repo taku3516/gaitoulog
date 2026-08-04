@@ -2,7 +2,8 @@
     "name": "街頭活動ログ",
     "short_name": "街頭ログ",
     "description": "街頭演説・街頭活動の記録・集計・可視化アプリ",
-    "start_url": "/",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
     "background_color": "#e6eef4",
     "theme_color": "#5081b5",
@@ -10,15 +11,9 @@
     "lang": "ja",
     "icons": [
         {
-            "src": "/assets/icons/icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "any maskable"
-        },
-        {
-            "src": "/assets/icons/icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
+            "src": "./assets/icons/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
             "purpose": "any maskable"
         }
     ]

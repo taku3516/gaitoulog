@@ -7,7 +7,12 @@ const STORE_NAME = 'records';
 
 // 複数議員対応
 const POLITICIAN_KEY = 'streetActivityLog_currentPoliticianId';
+const ALL_POLITICIANS_KEY = 'streetActivityLog_allPoliticians';
+
 let currentPoliticianId = localStorage.getItem(POLITICIAN_KEY) || 'default';
+let politicians = JSON.parse(localStorage.getItem(ALL_POLITICIANS_KEY)) || [
+    { id: 'default', name: '標準アカウント' }
+];
 
 export function getCurrentPoliticianId() {
     return currentPoliticianId;
@@ -18,12 +23,24 @@ export function setCurrentPoliticianId(id) {
     localStorage.setItem(POLITICIAN_KEY, id);
 }
 
-// 議員一覧（マスタ）
-export const POLITICIANS = [
-    { id: 'default', name: '標準アカウント' },
-    { id: 'politician_a', name: '議員A' },
-    { id: 'politician_b', name: '議員B' }
-];
+export function getPoliticians() {
+    return [...politicians];
+}
+
+export function addPolitician(name) {
+    const id = 'pol_' + Date.now().toString(36);
+    politicians.push({ id, name });
+    localStorage.setItem(ALL_POLITICIANS_KEY, JSON.stringify(politicians));
+    return id;
+}
+
+export function removePolitician(id) {
+    if (id === 'default') return false;
+    politicians = politicians.filter(p => p.id !== id);
+    localStorage.setItem(ALL_POLITICIANS_KEY, JSON.stringify(politicians));
+    if (currentPoliticianId === id) setCurrentPoliticianId('default');
+    return true;
+}
 
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
@@ -246,4 +263,45 @@ export async function getUniqueAreas() {
 
 export async function getUniqueSpots() {
     return [...new Set((await getAll()).map(r => r.spot).filter(Boolean))];
+}
+
+/**
+ * おすすめ活動候補の計算ロジック
+ * @param {string} dateStr 'YYYY-MM-DD'
+ * @param {string} startStr 'HH:mm'
+ * @param {string} area フィルタ用（任意）
+ * @param {string} spot フィルタ用（任意）
+ * @returns {Promise<Array>}
+ */
+export async function getRecommendations(dateStr, startStr, area = '', spot = '') {
+    const allRecords = await getAll();
+    if (!dateStr || !startStr || allRecords.length === 0) return [];
+
+    const d = new Date(dateStr);
+    const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+    const hour = parseInt(startStr.split(':')[0], 10);
+
+    let candidates = allRecords.filter(r => {
+        let score = 0;
+        if (r.dayOfWeek === dayOfWeek) score += 1;
+        if (r.hour != null && Math.abs(r.hour - hour) <= 2) score += 1;
+        if (area && r.area === area) score += 2;
+        if (spot && r.spot === spot) score += 3;
+        r._matchScore = score;
+        return score >= 2;
+    });
+
+    const bestBySpot = {};
+    for (const c of candidates) {
+        const key = `${c.area}|${c.spot}`;
+        const prev = bestBySpot[key];
+        const rate = c.distributionRate || 0;
+        if (!prev || rate > (prev.distributionRate || 0)) {
+            bestBySpot[key] = c;
+        }
+    }
+
+    return Object.values(bestBySpot).sort((a, b) => {
+        return (b.distributionRate || 0) - (a.distributionRate || 0) || b._matchScore - a._matchScore;
+    }).slice(0, 10);
 }
