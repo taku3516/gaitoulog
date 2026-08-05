@@ -706,6 +706,24 @@ main {
 .detail-label { display: block; font-size: var(--t-xs); color: var(--ink-muted); }
 .detail-value { font-size: var(--t-md); font-weight: 700; font-variant-numeric: tabular-nums; }
 .detail-unit { font-size: var(--t-xs); color: var(--ink-muted); }
+.detail-list { margin-bottom: var(--s4); }
+.detail-list-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s4);
+    padding: var(--s2) 0;
+    border-top: 1px solid var(--line);
+}
+.detail-list-row:first-child { border-top: none; }
+.detail-list-row .detail-label { flex-shrink: 0; }
+.detail-list-value {
+    font-size: var(--t-sm);
+    font-weight: 700;
+    text-align: right;
+    word-break: break-word;
+    font-variant-numeric: tabular-nums;
+}
 .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 
 /* ===== 空の状態 ===== */
