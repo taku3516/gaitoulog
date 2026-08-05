@@ -163,8 +163,8 @@ export async function render(container, { onEdit }) {
             modal.className = 'modal-overlay';
             document.body.appendChild(modal);
         }
-        // 地名が地区と同じときは重ねて出さない
-        const place = [record.area, record.locality].filter((v, i, arr) => v && arr.indexOf(v) === i);
+        // 地区と地名は同じ値でも両方そのまま出す
+        const place = [record.area, record.locality].filter(Boolean);
         const rows = detailRows(record);
 
         modal.style.display = 'flex';
