@@ -12,6 +12,10 @@
     --accent-success: #4caf50;
     --status-warning: #f59e0b;
     --status-error: #ef4444;
+    /* 各画面が --accent-error / --accent-warning の名前で参照しているため別名を用意する。
+       未定義のままだと color/border の指定ごと無効になり、ボタンの枠線が消える */
+    --accent-error: var(--status-error);
+    --accent-warning: var(--status-warning);
 
     /* Safe Area */
     --safe-top: env(safe-area-inset-top, 0px);
@@ -61,9 +65,36 @@ header {
     justify-content: space-between;
     align-items: center;
 }
-.header-title { font-size: var(--font-size-lg); font-weight: 800; color: var(--accent-primary); letter-spacing: -0.025em; }
-.header-account select { background: var(--bg-input); border: none; padding: 6px 12px; border-radius: 20px; font-size: var(--font-size-sm); font-weight: 600; color: var(--text-secondary); cursor: pointer; outline: none; transition: 0.2s; }
-.header-account select:hover { background: var(--bg-hover); color: var(--accent-primary); }
+.app-header { gap: var(--spacing-sm); }
+
+/* h1 の既定サイズ(2em)のままだと、狭い画面でタイトルが折り返して
+   ヘッダーが3行に伸びてしまうため、明示的に指定する */
+.app-title {
+    font-size: var(--font-size-lg);
+    font-weight: 800;
+    color: var(--accent-primary);
+    letter-spacing: -0.025em;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.app-icon { font-size: 1.1em; line-height: 1; }
+
+/* .form-select の指定より後に定義されるため、詳細度を上げて確実に上書きする */
+.app-header .header-select {
+    margin-left: auto;
+    width: auto;
+    max-width: 45vw;
+    min-height: 34px;
+    padding: 4px 28px 4px 12px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    border-color: var(--border-active);
+    text-overflow: ellipsis;
+}
 
 .bottom-nav {
     position: fixed;
@@ -136,6 +167,10 @@ main {
 }
 .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent-primary); background: var(--bg-card); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md); }
+/* グリッド項目の既定は min-width:auto のため、date/time 入力が持つ
+   固有の最小幅より狭くならず、狭い画面で横にはみ出す。0 を指定して縮められるようにする */
+.form-row > * { min-width: 0; }
+.form-input, .form-select, .form-textarea { min-width: 0; }
 
 /* Buttons */
 .btn {
@@ -186,7 +221,10 @@ main {
 .drag-handle:active { cursor: grabbing; }
 .sortable-ghost { opacity: 0.4; }
 .sortable-drag { cursor: grabbing !important; }
-.chart-canvas-wrapper { height: 240px; }
+.chart-canvas-wrapper { height: 240px; position: relative; }
+/* Chart.js の読み込み前・失敗時は canvas が既定の300pxのままになり、
+   狭い画面で横にはみ出すため上限を付けておく */
+.chart-canvas-wrapper canvas { max-width: 100%; }
 
 /* Dashboard Heatmap & Sticky Enhancements */
 .heatmap-table td {
@@ -258,11 +296,198 @@ main {
 /* List View Specific */
 .list-card { display: flex; gap: var(--spacing-md); padding: var(--spacing-md); background: var(--bg-card); border-radius: var(--radius-lg); margin-bottom: var(--spacing-sm); border: 1px solid var(--border-color); transition: 0.2s; }
 .list-card:active { background: var(--bg-hover); }
-.list-card-content { flex: 1; }
-.list-card-title { font-weight: 700; margin-bottom: 4px; }
-.list-card-meta { font-size: var(--font-size-xs); color: var(--text-muted); }
-.list-card-stat { font-size: var(--font-size-lg); font-weight: 800; color: var(--accent-primary); text-align: right; }
+/* min-width:0 が無いと、長いスポット名で card が横に膨らんではみ出す */
+.list-card-content { flex: 1; min-width: 0; }
+.list-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-sm); }
+.list-card-location { font-weight: 700; color: var(--text-primary); overflow-wrap: anywhere; }
+.list-card-date { font-size: var(--font-size-xs); color: var(--text-muted); margin-top: 2px; }
+.list-card-stats { display: flex; flex-wrap: wrap; gap: var(--spacing-xs) var(--spacing-sm); margin-top: var(--spacing-sm); }
+.stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    padding: 3px 8px;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.stat-value { font-weight: 700; color: var(--accent-primary); }
+.list-card-tags { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-top: var(--spacing-sm); }
+.mini-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent-secondary);
+    background: rgba(80, 129, 181, 0.1);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+.bulk-cb { flex-shrink: 0; margin-top: 2px; }
+
+.badge {
+    display: inline-block;
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    color: var(--text-secondary);
+    background: var(--bg-input);
+    border-radius: 999px;
+    padding: 3px 10px;
+    white-space: nowrap;
+}
+.badge-warning { color: #92400e; background: #fef3c7; }
 
 /* Empty state */
 .empty-state { text-align: center; padding: var(--spacing-2xl) 0; color: var(--text-muted); }
 .empty-state-icon { font-size: 48px; margin-bottom: var(--spacing-md); opacity: 0.5; }
+.empty-state-text { font-size: var(--font-size-sm); line-height: 1.8; padding: 0 var(--spacing-md); }
+
+/* ===== 画面共通 ===== */
+.view-container { padding-bottom: var(--spacing-md); }
+.section-title {
+    font-size: var(--font-size-lg);
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* 入力エラー: .visible が付いたときだけ表示する */
+.form-error {
+    display: none;
+    font-size: var(--font-size-xs);
+    color: var(--status-error);
+    margin-top: var(--spacing-xs);
+    font-weight: 600;
+}
+.form-error.visible { display: block; }
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-height: 44px;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.checkbox-group input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--accent-primary);
+    flex-shrink: 0;
+}
+
+/* よく使う場所のショートカット */
+.quick-tags { margin-bottom: var(--spacing-md); }
+.quick-tags-title {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-sm);
+}
+
+/* ===== 折りたたみセクション ===== */
+/* .open が付いたときだけ中身を開く。CSSが無いと常に開いたままになる */
+.collapsible {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--spacing-md);
+    overflow: hidden;
+}
+.collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    min-height: 52px;
+    cursor: pointer;
+    user-select: none;
+}
+.collapsible-title { font-size: var(--font-size-sm); font-weight: 700; color: var(--text-secondary); }
+.collapsible-arrow {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+.collapsible.open .collapsible-arrow { transform: rotate(180deg); }
+.collapsible-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.25s ease;
+}
+.collapsible.open .collapsible-body { grid-template-rows: 1fr; }
+.collapsible-content { overflow: hidden; }
+.collapsible.open .collapsible-content {
+    padding: 0 var(--spacing-md) var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    padding-top: var(--spacing-md);
+}
+
+/* ===== 一覧画面の絞り込みバー ===== */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+.filter-select {
+    flex: 1 1 140px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 28px 8px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-family: inherit;
+    color: var(--text-primary);
+    outline: none;
+}
+
+/* ===== ランキング ===== */
+.ranking-info { flex: 1; min-width: 0; }
+.ranking-name { font-weight: 700; color: var(--text-primary); overflow-wrap: anywhere; }
+.ranking-stat { font-size: var(--font-size-xs); color: var(--text-muted); margin-top: 2px; }
+
+/* ===== トースト通知 ===== */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--spacing-md));
+    transform: translate(-50%, 20px);
+    max-width: calc(100vw - 2 * var(--spacing-md));
+    background: var(--text-primary);
+    color: #fff;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    padding: 12px 20px;
+    border-radius: 999px;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 2000;
+    text-align: center;
+}
+.toast.show { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+.toast.error { background: var(--status-error); }
+
+/* ===== 狭い画面向けの調整 ===== */
+@media (max-width: 359px) {
+    /* 2列のままだと日付/時刻入力がはみ出すので1列に落とす */
+    .form-row { grid-template-columns: 1fr; gap: var(--spacing-sm); }
+    main { padding: var(--spacing-sm); padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + var(--spacing-2xl)); }
+    .app-title { font-size: var(--font-size-base); }
+    .app-header .header-select { max-width: 42vw; }
+    .nav-btn .nav-icon { font-size: 18px; }
+    .card, .collapsible-header { padding: var(--spacing-sm); }
+    .collapsible.open .collapsible-content { padding: var(--spacing-sm); }
+    .stat-card { padding: var(--spacing-sm); }
+    .stat-card-value { font-size: 20px; }
+}
