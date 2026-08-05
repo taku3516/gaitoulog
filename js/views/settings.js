@@ -1,6 +1,8 @@
 // ===== 設定画面（Googleログインと端末間同期） =====
 // クラウド同期が未設定（enabled: false）のときは同期UIを一切表示しない。
 
+import { icon } from '../utils/icons.js';
+
 let unsubscribe = null;
 let rememberDevice = false;
 
@@ -16,8 +18,8 @@ function cloud() {
 
 const STATUS_TEXT = {
     idle: '',
-    connecting: '接続しています...',
-    syncing: '同期しています...',
+    connecting: '接続しています…',
+    syncing: '同期しています…',
     synced: '同期済み',
     error: '',
 };
@@ -27,14 +29,10 @@ export async function render(container) {
 
     function statusLine(state) {
         const message = state.message || STATUS_TEXT[state.status] || '';
-        if (!message) return '';
-        const color = state.status === 'error' ? 'var(--status-error)'
-            : state.status === 'synced' ? 'var(--accent-success)'
-            : 'var(--text-muted)';
-        const icon = state.status === 'error' ? '⚠️'
-            : state.status === 'synced' ? '✅'
-            : '🔄';
-        return `<span style="color: ${color};">${icon} ${escapeHtml(message)}</span>`;
+        if (!message) return '<div class="status-line"></div>';
+        const modifier = state.status === 'error' ? ' is-error' : state.status === 'synced' ? ' is-done' : '';
+        const mark = state.status === 'error' ? 'alert' : state.status === 'synced' ? 'check' : 'refresh';
+        return `<div class="status-line${modifier}">${icon(mark, { size: 14 })}<span>${escapeHtml(message)}</span></div>`;
     }
 
     function renderBody() {
@@ -47,11 +45,11 @@ export async function render(container) {
             // 未設定: 同期UIは出さない。アプリは従来どおり動く。
             syncSection = `
                 <div class="card">
-                    <div class="card-title" style="margin-bottom: 12px;">☁️ 端末間の同期</div>
-                    <p style="font-size: var(--font-size-sm); color: var(--text-secondary); line-height: 1.7; margin: 0;">
-                        この端末では同期機能が設定されていません。活動記録はこの端末の中だけに保存されます。
+                    <div class="card-title">${icon('cloud')}端末間の同期</div>
+                    <p class="text-sm" style="margin: 12px 0 0; color: var(--ink-secondary);">
+                        この端末では同期が設定されていません。活動記録はこの端末の中だけに保存されます。
                     </p>
-                    <p style="font-size: var(--font-size-xs); color: var(--text-muted); margin: 12px 0 0; line-height: 1.6;">
+                    <p class="text-xs text-muted" style="margin: 8px 0 0;">
                         設定方法は <code>docs/firebase-sync-setup.md</code> を参照してください。
                     </p>
                 </div>
@@ -59,23 +57,20 @@ export async function render(container) {
         } else if (!state.user) {
             syncSection = `
                 <div class="card">
-                    <div class="card-title" style="margin-bottom: 12px;">☁️ 端末間の同期</div>
-                    <p style="font-size: var(--font-size-sm); color: var(--text-secondary); line-height: 1.7; margin: 0 0 16px;">
+                    <div class="card-title">${icon('cloud')}端末間の同期</div>
+                    <p class="text-sm" style="margin: 12px 0 16px; color: var(--ink-secondary);">
                         Googleでログインすると、すべてのアカウントの活動記録がクラウドに保存され、
                         同じGoogleアカウントでログインした他の端末と自動的に同期されます。
                     </p>
-                    <label style="display: flex; align-items: center; gap: 8px; font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: 16px; cursor: pointer;">
-                        <input type="checkbox" id="remember-device" ${rememberDevice ? 'checked' : ''}
-                            style="width: 18px; height: 18px; accent-color: var(--accent-primary);">
+                    <label class="checkbox-group" style="margin-bottom: 12px;">
+                        <input type="checkbox" id="remember-device" ${rememberDevice ? 'checked' : ''}>
                         この端末でログイン状態を維持する
                     </label>
                     <button class="btn btn-primary btn-full" id="cloud-signin" ${state.busy ? 'disabled' : ''}>
                         Googleでログイン
                     </button>
-                    <div style="font-size: var(--font-size-xs); margin-top: 10px; min-height: 1.2em;" aria-live="polite">
-                        ${statusLine(state)}
-                    </div>
-                    <p style="font-size: var(--font-size-xs); color: var(--text-muted); margin: 12px 0 0; line-height: 1.6;">
+                    <div style="margin-top: 10px;" aria-live="polite">${statusLine(state)}</div>
+                    <p class="text-xs text-muted" style="margin: 12px 0 0;">
                         ログインは任意です。ログインしない場合も、これまでどおりこの端末だけで利用できます。
                         Gmailやドライブなど、他のGoogleサービスへのアクセス権は要求しません。
                     </p>
@@ -84,25 +79,23 @@ export async function render(container) {
         } else {
             syncSection = `
                 <div class="card">
-                    <div class="card-title" style="margin-bottom: 12px;">☁️ 端末間の同期</div>
-                    <div style="font-size: var(--font-size-sm); color: var(--text-primary); font-weight: 600;">
+                    <div class="card-title">${icon('cloud')}端末間の同期</div>
+                    <div style="margin-top: 12px; font-weight: 700;">
                         ${escapeHtml(state.user.displayName || 'ログイン中')}
                     </div>
-                    <div style="font-size: var(--font-size-xs); margin-top: 8px; min-height: 1.2em;" aria-live="polite">
-                        ${statusLine(state)}
-                    </div>
-                    <button class="btn btn-secondary btn-full" id="cloud-signout" style="margin-top: 12px;" ${state.busy ? 'disabled' : ''}>
+                    <div style="margin-top: 6px;" aria-live="polite">${statusLine(state)}</div>
+                    <button class="btn btn-secondary btn-full" id="cloud-signout" style="margin-top: 14px;" ${state.busy ? 'disabled' : ''}>
                         ログアウト
                     </button>
-                    <p style="font-size: var(--font-size-xs); color: var(--text-muted); margin: 12px 0 0; line-height: 1.6;">
-                        ログアウトすると、この端末はログイン前のローカルの記録に戻ります。
+                    <p class="text-xs text-muted" style="margin: 12px 0 0;">
+                        ログアウトすると、この端末はログイン前の記録に戻ります。
                         クラウド上のデータは残り、次にログインしたときに再び同期されます。
                     </p>
                 </div>
 
-                <div class="card" style="margin-top: var(--spacing-md); border: 1px solid #fee2e2;">
-                    <div class="card-title" style="margin-bottom: 8px; color: var(--status-error);">🗑️ クラウドのデータを削除</div>
-                    <p style="font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.7; margin: 0 0 12px;">
+                <div class="card">
+                    <div class="card-title" style="color: var(--critical);">${icon('trash')}クラウドのデータを削除</div>
+                    <p class="text-xs" style="margin: 10px 0 12px; color: var(--ink-secondary); line-height: 1.8;">
                         クラウド上の活動記録とアカウント情報をすべて削除し、この連携を解除します。
                         確認のためGoogleの再ログインを求められます。この操作は取り消せません。
                     </p>
@@ -114,8 +107,8 @@ export async function render(container) {
         }
 
         container.innerHTML = `
-            <div class="view-container" id="settings-root">
-                <div class="section-title">⚙️ 設定</div>
+            <div id="settings-root">
+                <h2 class="section-title">${icon('settings', { size: 19 })}設定</h2>
                 ${syncSection}
             </div>
         `;

@@ -2,6 +2,7 @@
 import * as store from '../store.js';
 import { exportToCSV } from '../utils/csv-export.js';
 import { parseCSV, readCSVFile } from '../utils/csv-import.js';
+import { icon, weatherIcon } from '../utils/icons.js';
 
 export async function render(container, { onEdit }) {
     const areas = await store.getUniqueAreas();
@@ -48,25 +49,25 @@ export async function render(container, { onEdit }) {
         return filtered;
     }
 
-    function getWeatherEmoji(w) { return { '晴': '☀️', '曇': '☁️', '雨': '🌧️', '雪': '❄️' }[w] || ''; }
+    const weatherMark = (w) => (weatherIcon(w) ? icon(weatherIcon(w), { size: 13 }) : '');
 
     const WEATHER_OPTS = ['晴', '曇', '雨', '雪'];
 
     function renderList() {
         // Render Filters
         const filtersAreaHTML = areas.length === 0 ? '' : `
-            <div style="margin-bottom: 8px;">
-                <div style="font-size: var(--font-size-xs); color: var(--text-muted); margin-bottom: 4px;">エリア絞り込み（複数選択）</div>
+            <div style="margin-bottom: 12px;">
+                <div class="filter-heading">エリア</div>
                 <div class="tag-group">
                     ${areas.map(a => `<button type="button" class="tag filter-area-btn ${selectedAreas.includes(a) ? 'selected' : ''}" data-val="${a}">${a}</button>`).join('')}
                 </div>
             </div>
         `;
         const filtersWeatherHTML = `
-            <div style="margin-bottom: 8px;">
-                <div style="font-size: var(--font-size-xs); color: var(--text-muted); margin-bottom: 4px;">天候絞り込み（複数選択）</div>
+            <div>
+                <div class="filter-heading">天候</div>
                 <div class="tag-group">
-                    ${WEATHER_OPTS.map(w => `<button type="button" class="tag filter-weather-btn ${selectedWeathers.includes(w) ? 'selected' : ''}" data-val="${w}">${getWeatherEmoji(w)} ${w}</button>`).join('')}
+                    ${WEATHER_OPTS.map(w => `<button type="button" class="tag filter-weather-btn ${selectedWeathers.includes(w) ? 'selected' : ''}" data-val="${w}">${weatherMark(w)} ${w}</button>`).join('')}
                 </div>
             </div>
         `;
@@ -80,25 +81,23 @@ export async function render(container, { onEdit }) {
 
         // 3-2. 一括削除UI
         document.getElementById('list-results').innerHTML = filtered.length === 0 ? `
-      <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">記録がありません</div></div>
+      <div class="empty-state"><div class="empty-state-icon">${icon('list', { size: 32 })}</div><div class="empty-state-text">記録がありません</div></div>
     ` : filtered.map(r => `
-      <div class="list-card" style="display: flex; align-items: stretch; padding: 0;">
-        <div style="padding: 16px 12px; display: flex; align-items: center; border-right: 1px solid var(--border-color); background: var(--bg-input);">
-          <input type="checkbox" class="bulk-cb" data-id="${r.id}" ${selectedForDelete.has(r.id) ? 'checked' : ''} style="width:20px; height:20px; accent-color: var(--accent-primary);">
+      <div class="list-card">
+        <div class="list-card-select">
+          <input type="checkbox" class="bulk-cb" data-id="${r.id}" ${selectedForDelete.has(r.id) ? 'checked' : ''} aria-label="選択">
         </div>
-        <div class="list-card-content" data-id="${r.id}" style="padding: 16px; flex: 1;">
-            <div class="list-card-top"><div>
-            <div class="list-card-location">${r.area} / ${r.spot}</div>
-            <div class="list-card-date">${r.date}（${r.dayOfWeek}） ${r.startTime}〜${r.endTime} ${r.weather ? getWeatherEmoji(r.weather) : ''}</div>
-            </div></div>
+        <div class="list-card-content" data-id="${r.id}">
+            <div class="list-card-location">${r.area} ／ ${r.spot}</div>
+            <div class="list-card-date">${r.date}（${r.dayOfWeek}）${r.startTime}〜${r.endTime}${r.weather ? weatherMark(r.weather) : ''}</div>
             <div class="list-card-stats">
-            <div class="stat-chip">📄 <span class="stat-value">${r.distributionCount}</span>枚</div>
-            <div class="stat-chip">⏱️ <span class="stat-value">${r.duration || '-'}</span>分</div>
-            <div class="stat-chip">📈 <span class="stat-value">${r.distributionRate != null ? r.distributionRate : '-'}</span>枚/分</div>
-            ${r.volunteerCount > 0 ? `<div class="stat-chip">👥 <span class="stat-value">${r.volunteerCount}</span>名</div>` : ''}
+              <span class="stat-chip">${icon('page')}<span class="stat-value">${r.distributionCount}</span>枚</span>
+              <span class="stat-chip">${icon('clock')}<span class="stat-value">${r.duration || '-'}</span>分</span>
+              <span class="stat-chip">${icon('trend')}<span class="stat-value">${r.distributionRate != null ? r.distributionRate : '-'}</span>枚/分</span>
+              ${r.volunteerCount > 0 ? `<span class="stat-chip">${icon('users')}<span class="stat-value">${r.volunteerCount}</span>名</span>` : ''}
             </div>
             ${(r.themes?.length > 0) ? `<div class="list-card-tags">${r.themes.map(t => `<span class="mini-tag">${t}</span>`).join('')}</div>` : ''}
-            ${r.hasTrouble ? '<div style="margin-top:6px;"><span class="badge badge-warning">⚠️ トラブル</span></div>' : ''}
+            ${r.hasTrouble ? `<div class="list-card-tags"><span class="badge badge-warning">トラブルあり</span></div>` : ''}
         </div>
       </div>
     `).join('');
@@ -128,29 +127,29 @@ export async function render(container, { onEdit }) {
         if (!modal) {
             modal = document.createElement('div');
             modal.id = 'detail-modal';
-            modal.style = 'position:fixed; top:0; left:0; right:0; bottom:0; z-index:1000; background:rgba(0,0,0,0.5); display:flex; align-items:flex-end;';
+            modal.className = 'modal-overlay';
             document.body.appendChild(modal);
         }
         modal.style.display = 'flex';
         modal.innerHTML = `
-            <div style="background:var(--bg-card); width:100%; border-radius:var(--radius-lg) var(--radius-lg) 0 0; padding:var(--spacing-lg); padding-bottom:calc(var(--spacing-xl) + var(--safe-bottom)); animation: slideUp 0.3s ease;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:var(--spacing-md);">
+            <div class="modal-sheet">
+                <div class="modal-head">
                     <div>
-                        <div style="font-size:var(--font-size-lg); font-weight:700;">${record.spot}</div>
-                        <div style="font-size:var(--font-size-sm); color:var(--text-muted);">${record.date} (${record.dayOfWeek})</div>
+                        <div class="modal-title">${record.spot}</div>
+                        <div class="modal-sub">${record.area}｜${record.date}（${record.dayOfWeek}）${record.startTime}〜${record.endTime}</div>
                     </div>
-                    <button id="close-modal" style="background:none; border:none; font-size:1.5rem; cursor:pointer;">✕</button>
+                    <button id="close-modal" class="btn btn-secondary btn-sm" aria-label="閉じる">${icon('close', { size: 15 })}</button>
                 </div>
-                <div style="background:var(--bg-input); border-radius:var(--radius-md); padding:var(--spacing-md); margin-bottom:var(--spacing-lg); display:grid; grid-template-columns:1fr 1fr; gap:var(--spacing-md);">
-                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">配布枚数</span><br><span style="font-weight:700;">${record.distributionCount}</span> 枚</div>
-                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">配布効率</span><br><span style="font-weight:700;">${record.distributionRate || '-'}</span> 枚/分</div>
-                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">活動時間</span><br><span style="font-weight:700;">${record.duration || '-'}</span> 分</div>
-                    <div><span style="font-size:var(--font-size-xs); color:var(--text-muted);">天候</span><br><span style="font-weight:700;">${record.weather || '-'}</span></div>
+                <div class="detail-grid">
+                    <div><span class="detail-label">配布枚数</span><span class="detail-value">${record.distributionCount}</span><span class="detail-unit"> 枚</span></div>
+                    <div><span class="detail-label">配布効率</span><span class="detail-value">${record.distributionRate ?? '-'}</span><span class="detail-unit"> 枚/分</span></div>
+                    <div><span class="detail-label">活動時間</span><span class="detail-value">${record.duration ?? '-'}</span><span class="detail-unit"> 分</span></div>
+                    <div><span class="detail-label">天候</span><span class="detail-value">${record.weather || '-'}</span></div>
                 </div>
-                ${record.memo ? `<div style="margin-bottom:var(--spacing-lg);"><span style="font-size:var(--font-size-xs); color:var(--text-muted);">メモ</span><br><p style="font-size:var(--font-size-sm);">${record.memo}</p></div>` : ''}
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--spacing-md);">
-                    <button id="modal-edit" class="btn btn-primary">✏️ 編集する</button>
-                    <button id="modal-delete" class="btn btn-secondary" style="color:var(--accent-error); border-color:var(--accent-error);">🗑️ 削除</button>
+                ${record.memo ? `<div style="margin-bottom:var(--s4);"><span class="detail-label">メモ</span><p class="text-sm" style="margin:4px 0 0;">${record.memo}</p></div>` : ''}
+                <div class="modal-actions">
+                    <button id="modal-edit" class="btn btn-primary">${icon('edit', { size: 16 })}編集する</button>
+                    <button id="modal-delete" class="btn btn-danger">${icon('trash', { size: 16 })}削除</button>
                 </div>
             </div>
         `;
@@ -179,21 +178,18 @@ export async function render(container, { onEdit }) {
     }
 
     container.innerHTML = `
-    <div class="view-container">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div class="section-title" style="margin-bottom:0; border:none; padding:0;">📋 活動一覧</div>
-        <div style="font-size:0.8rem; color:var(--text-muted);">
-           👤 ${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
-        </div>
+    <div>
+      <div class="list-toolbar" style="margin-bottom: var(--s4);">
+        <h2 class="section-title" style="margin:0;">${icon('list', { size: 19 })}活動一覧</h2>
+        <span class="stat-chip">${icon('user')}${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}</span>
       </div>
-      <hr style="border:0; border-top:2px solid var(--border-color); margin: 8px 0 16px 0;">
 
-      <div class="filter-bar" style="align-items:flex-start;">
+      <div class="filter-bar">
         <select class="filter-select" id="filter-period"><option value="all">全期間</option><option value="this-month">今月</option><option value="last-month">先月</option><option value="custom">期間指定</option></select>
         <select class="filter-select" id="filter-sort"><option value="date-desc">新しい順</option><option value="date-asc">古い順</option><option value="rate-desc">配布係数順</option><option value="count-desc">配布枚数順</option><option value="duration-desc">活動時間順</option></select>
       </div>
 
-      <div id="custom-range" style="display:none; margin-bottom: var(--spacing-md);">
+      <div id="custom-range" style="display:none; margin-bottom: var(--s3);">
         <div class="form-row">
           <div class="form-group"><label class="form-label">開始日</label><input type="date" class="form-input" id="filter-start" /></div>
           <div class="form-group"><label class="form-label">終了日</label><input type="date" class="form-input" id="filter-end" /></div>
@@ -201,15 +197,16 @@ export async function render(container, { onEdit }) {
       </div>
 
       <!-- 3-1 Multi Selector Area -->
-      <div id="multi-filters-container" style="margin-bottom: var(--spacing-md); padding-bottom: 12px; border-bottom: 1px solid var(--border-color);"></div>
+      <div id="multi-filters-container"></div>
+      <div class="divider"></div>
 
-      <div style="display:flex;flex-wrap:wrap; gap:8px; justify-content:space-between;align-items:center;margin-bottom:var(--spacing-md);">
-        <div><span id="list-count" class="badge">0件</span></div>
-        <div style="display:flex;gap:var(--spacing-sm); flex-wrap:wrap;">
+      <div class="list-toolbar">
+        <span id="list-count" class="badge">0件</span>
+        <div class="list-toolbar-actions">
           <button class="btn btn-danger btn-sm" id="btn-bulk-delete" style="display:none;"></button>
-          <button class="btn btn-danger btn-sm" id="btn-delete-all" style="background:transparent; color:var(--accent-error); border:1px solid var(--accent-error);">全件削除</button>
-          <button class="btn btn-secondary btn-sm" id="btn-import">📤 取込</button>
-          <button class="btn btn-secondary btn-sm" id="btn-export">📥 出力</button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-all">全件削除</button>
+          <button class="btn btn-secondary btn-sm" id="btn-import">${icon('upload')}取込</button>
+          <button class="btn btn-secondary btn-sm" id="btn-export">${icon('download')}出力</button>
         </div>
       </div>
       <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
@@ -262,12 +259,12 @@ export async function render(container, { onEdit }) {
                 return;
             }
             const confirmMsg = `${records.length}件のデータをインポートします。` +
-                (errors.length > 0 ? `\n\n⚠️ ${errors.length}件のエラー:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n...他${errors.length - 5}件` : ''}` : '') +
+                (errors.length > 0 ? `\n\n${errors.length}件のエラー:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n...他${errors.length - 5}件` : ''}` : '') +
                 '\n\nよろしいですか？';
             if (!confirm(confirmMsg)) return;
 
             const count = await store.bulkImport(records);
-            alert(`✅ ${count}件のデータをインポートしました。`);
+            alert(`${count}件のデータを取り込みました。`);
             allRecords = await store.getAll();
             renderList();
         } catch (err) {
