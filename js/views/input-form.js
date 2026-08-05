@@ -38,6 +38,9 @@ export async function render(container, { onSaved }) {
     // Fetch async data
     const recentLocations = await store.getRecentLocations(5);
     const uniqueSpots = await store.getUniqueSpots();
+    const uniqueLocalities = await store.getUniqueLocalities();
+    // 固定エリア + 取込済みデータの地区（CSVの地区が固定リストに無くても編集できるように）
+    const areaOptions = [...new Set([...FIXED_AREAS, ...await store.getUniqueAreas()])];
     const recentThemes = await store.getRecentThemes();
     const recentMaterials = await store.getRecentMaterials(); // (2-3) 過去入力ベース
     allRecordsCache = await store.getAll();
@@ -88,7 +91,7 @@ export async function render(container, { onSaved }) {
           <div class="quick-tags">
             <div class="quick-tags-title">${icon('pin', { size: 14 })}よく使う場所</div>
             <div class="tag-group" id="quick-locations">
-              ${locationTags.map(loc => `<button type="button" class="tag ${(record?.area === loc.area && record?.spot === loc.spot) ? 'selected' : ''}" data-area="${loc.area}" data-spot="${loc.spot}">${loc.spot}</button>`).join('')}
+              ${locationTags.map(loc => `<button type="button" class="tag ${(record?.area === loc.area && record?.spot === loc.spot) ? 'selected' : ''}" data-area="${loc.area}" data-locality="${loc.locality || ''}" data-spot="${loc.spot}">${loc.spot}</button>`).join('')}
             </div>
           </div>
 
@@ -98,16 +101,22 @@ export async function render(container, { onSaved }) {
               <!-- 2-2. エリアの選択肢を固定化 -->
               <select class="form-select" id="f-area">
                 <option value="">選択してください</option>
-                ${FIXED_AREAS.map(a => `<option value="${a}" ${record?.area === a ? 'selected' : ''}>${a}</option>`).join('')}
+                ${areaOptions.map(a => `<option value="${a}" ${record?.area === a ? 'selected' : ''}>${a}</option>`).join('')}
               </select>
               <div class="form-error" id="err-area"></div>
             </div>
             <div class="form-group">
-              <label class="form-label">スポット<span class="required">*</span></label>
-              <input type="text" class="form-input" id="f-spot" value="${record?.spot || ''}" placeholder="例：大井町駅前" list="spot-list" />
-              <datalist id="spot-list">${[...new Set([...uniqueSpots, ...PRESET_SPOTS.map(s => s.spot)])].map(s => `<option value="${s}">`).join('')}</datalist>
-              <div class="form-error" id="err-spot"></div>
+              <label class="form-label">地名</label>
+              <input type="text" class="form-input" id="f-locality" value="${record?.locality || ''}" placeholder="例：戸越" list="locality-list" />
+              <datalist id="locality-list">${uniqueLocalities.map(l => `<option value="${l}">`).join('')}</datalist>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">スポット<span class="required">*</span></label>
+            <input type="text" class="form-input" id="f-spot" value="${record?.spot || ''}" placeholder="例：大井町駅前" list="spot-list" />
+            <datalist id="spot-list">${[...new Set([...uniqueSpots, ...PRESET_SPOTS.map(s => s.spot)])].map(s => `<option value="${s}">`).join('')}</datalist>
+            <div class="form-error" id="err-spot"></div>
           </div>
 
           <div class="form-group">
@@ -216,9 +225,11 @@ export async function render(container, { onSaved }) {
                 // アンタップ時はリセット
                 btn.classList.remove('selected');
                 document.getElementById('f-area').value = '';
+                document.getElementById('f-locality').value = '';
                 document.getElementById('f-spot').value = '';
             } else {
                 document.getElementById('f-area').value = btn.dataset.area;
+                document.getElementById('f-locality').value = btn.dataset.locality || '';
                 document.getElementById('f-spot').value = btn.dataset.spot;
                 container.querySelectorAll('#quick-locations .tag').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
@@ -259,7 +270,7 @@ function getFormData() {
 
     return {
         date: v('f-date'), startTime: v('f-startTime'), endTime: v('f-endTime'), nextDay: c('f-nextDay'),
-        area: v('f-area').trim(), spot: v('f-spot').trim(), distributionCount: n('f-distributionCount'),
+        area: v('f-area').trim(), locality: v('f-locality').trim(), spot: v('f-spot').trim(), distributionCount: n('f-distributionCount'),
         volunteerCount: n('f-volunteerCount'), volunteerNames: v('f-volunteerNames'), memo: v('f-memo'),
         weather: v('f-weather'), temperature: n('f-temperature'),
         formType: v('f-formType'), micType: v('f-micType'), groupType: v('f-groupType'),

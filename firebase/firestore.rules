@@ -45,7 +45,7 @@ service cloud.firestore {
         return d.keys().hasOnly([
             'id', 'politicianId', 'schemaVersion', 'syncedAt', 'createdAt', 'updatedAt',
             'date', 'dayOfWeek', 'yearMonth', 'startTime', 'endTime', 'nextDay', 'hour', 'duration',
-            'area', 'spot',
+            'area', 'locality', 'spot',
             'distributionCount', 'distributionRate', 'acceptRate',
             'volunteerCount', 'volunteerNames',
             'weather', 'temperature',
@@ -65,6 +65,7 @@ service cloud.firestore {
           && d.spot is string && d.spot.size() > 0 && d.spot.size() <= 100
           && d.distributionCount is number && d.distributionCount >= 0 && d.distributionCount <= 1000000
           // 任意項目
+          && okStr(d, 'locality', 100)
           && okStr(d, 'dayOfWeek', 2) && okStr(d, 'yearMonth', 7)
           && okStr(d, 'startTime', 5) && okStr(d, 'endTime', 5)
           && okStr(d, 'weather', 20) && okStr(d, 'formType', 20)

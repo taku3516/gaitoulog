@@ -1,6 +1,9 @@
 // ===== CSVインポート =====
 import { enrichRecord } from '../calculations.js';
 
+/** 地区列が無いCSV向けのフォールバック */
+const DEFAULT_AREA = '品川区';
+
 /**
  * ヘッダー名の正規化マッピング
  * ユーザーのCSV形式と既存エクスポート形式の両方に対応
@@ -32,6 +35,8 @@ const HEADER_ALIASES = {
     'スポット': 'spot',
     '場所': 'spot',
     'エリア': 'area',
+    '地区': 'area',
+    '地名': 'locality',
     // メモ・備考
     '備考メモ': 'memo',
     '備考': 'memo',
@@ -41,6 +46,7 @@ const HEADER_ALIASES = {
     'ボランティア名': 'volunteerNames',
     '参加者': 'volunteerNames',
     'ボランティア人数': 'volunteerCount',
+    '参加人数': 'volunteerCount',
     // 番号（無視）
     '番号': '_number',
     'No': '_number',
@@ -93,8 +99,6 @@ export function parseCSV(csvText) {
 
     const errors = [];
     const records = [];
-    // エリアが独立カラムにないかチェック
-    const hasAreaColumn = Object.values(fieldMap).includes('area');
 
     for (let i = 1; i < lines.length; i++) {
         const row = lines[i];
@@ -138,27 +142,31 @@ export function parseCSV(csvText) {
             continue;
         }
 
-        // 場所
+        // 場所（地区 / 地名 / スポットの3階層）
         let area = getField('area');
-        let spot = getField('spot');
+        let locality = getField('locality');
+        const spot = getField('spot');
 
         if (!spot) {
             errors.push(`行${rowNum}: 場所（配布場所/スポット）が見つかりません。`);
             continue;
         }
 
-        // エリアが独立列にない場合、デフォルト値を設定
+        // 地区が無い場合は地名で代用し、代用した地名は空にする（同じ値の二重表示を防ぐ）
         if (!area) {
-            area = '品川区';
+            area = locality || DEFAULT_AREA;
+            locality = '';
         }
 
         // 配布枚数
         const distributionCount = getNumField('distributionCount');
 
-        // ボランティア
+        // ボランティア（人数列があればそれを優先し、無ければ参加者名から数える）
         const volunteerNames = getField('volunteerNames');
-        const volunteerCount = getNumField('volunteerCount') ||
-            (volunteerNames ? volunteerNames.split(/[、,，\s]+/).filter(Boolean).length : 0);
+        const explicitVolunteerCount = getNumField('volunteerCount');
+        const volunteerCount = explicitVolunteerCount !== ''
+            ? explicitVolunteerCount
+            : (volunteerNames ? volunteerNames.split(/[、,，\s]+/).filter(Boolean).length : 0);
 
         // メモ
         const memo = getField('memo');
@@ -175,6 +183,7 @@ export function parseCSV(csvText) {
             endTime,
             nextDay: false,
             area,
+            locality,
             spot,
             distributionCount: distributionCount || 0,
             volunteerCount: volunteerCount || 0,
