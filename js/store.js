@@ -247,9 +247,35 @@ export async function bulkRemove(ids) {
 
 const GUEST_POLITICIANS_KEY = 'streetActivityLog_guestPoliticians';
 const GUEST_STASHED_KEY = 'streetActivityLog_guestStashed';
+const GUEST_MERGED_KEY = 'streetActivityLog_guestMergedUids';
 
 export function hasGuestSnapshot() {
     return localStorage.getItem(GUEST_STASHED_KEY) === 'true';
+}
+
+/**
+ * この退避データを、指定のクラウドアカウントへ既にマージ済みか。
+ * マージは1つの退避につき1回だけ。毎回やり直すと、退避後に削除した
+ * アカウントや記録がクラウドへ復活してしまう。
+ */
+export function hasGuestMergedInto(uid) {
+    return getGuestMergedUids().includes(uid);
+}
+
+export function markGuestMergedInto(uid) {
+    const uids = getGuestMergedUids();
+    if (uids.includes(uid)) return;
+    uids.push(uid);
+    localStorage.setItem(GUEST_MERGED_KEY, JSON.stringify(uids));
+}
+
+function getGuestMergedUids() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(GUEST_MERGED_KEY));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
 }
 
 /** 現在のローカルデータをゲスト用ストアへ退避する（既に退避済みなら何もしない） */
@@ -267,6 +293,8 @@ export async function stashGuestSnapshot() {
     });
     localStorage.setItem(GUEST_POLITICIANS_KEY, JSON.stringify(politicians));
     localStorage.setItem(GUEST_STASHED_KEY, 'true');
+    // 新しい退避なので、マージ済みの記録もやり直す
+    localStorage.removeItem(GUEST_MERGED_KEY);
 }
 
 /** 退避しておいたゲスト状態を読み出す（マージ処理用） */
@@ -302,6 +330,7 @@ export async function restoreGuestSnapshot() {
     if (snapshot?.politicians?.length) replacePoliticians(snapshot.politicians);
     localStorage.removeItem(GUEST_POLITICIANS_KEY);
     localStorage.removeItem(GUEST_STASHED_KEY);
+    localStorage.removeItem(GUEST_MERGED_KEY);
     return true;
 }
 

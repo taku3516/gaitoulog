@@ -122,6 +122,42 @@ if (!existsSync(RULES_PATH)) {
     if (!/schemaVersion\s*==\s*1/.test(rules)) {
         problems.push('firestore.rules で schemaVersion の検証が行われていません。');
     }
+    checkRecordFieldsCoveredByRules(rules);
+}
+
+// アプリが送る項目がルールの許可リストに無いと、書き込みが permission-denied で
+// 弾かれ、その記録がこの端末から消えたように見える。両者のズレをここで検出する。
+function checkRecordFieldsCoveredByRules(rules) {
+    const syncSource = readFileSync(join(ROOT, 'js/sync/app-sync.js'), 'utf8');
+
+    const sentFields = new Set(['id', 'schemaVersion', 'syncedAt', 'politicianId', 'temperature']);
+    const collect = (blockName, pattern) => {
+        const block = syncSource.match(new RegExp(`const ${blockName}\\s*=\\s*([\\[{][\\s\\S]*?[\\]}]);`));
+        if (!block) {
+            problems.push(`app-sync.js の ${blockName} を読み取れませんでした。`);
+            return;
+        }
+        for (const m of block[1].matchAll(pattern)) sentFields.add(m[1]);
+    };
+    collect('STRING_LIMITS', /(\w+)\s*:/g);
+    collect('NUMBER_LIMITS', /(\w+)\s*:/g);
+    collect('LIST_FIELDS', /(\w+)\s*:/g);
+    collect('BOOL_FIELDS', /'([^']+)'/g);
+
+    const allowList = rules.match(/d\.keys\(\)\.hasOnly\(\[([\s\S]*?)\]\)/);
+    if (!allowList) {
+        problems.push('firestore.rules に記録の項目許可リスト (hasOnly) が見つかりません。');
+        return;
+    }
+    const allowed = new Set([...allowList[1].matchAll(/'([^']+)'/g)].map(m => m[1]));
+
+    const missing = [...sentFields].filter(f => !allowed.has(f));
+    if (missing.length) {
+        problems.push(
+            `アプリが送る項目が firestore.rules で許可されていません: ${missing.join(', ')}。`
+            + '（ルールを更新して Firebase コンソールで公開してください）'
+        );
+    }
 }
 
 // ---------- 結果 ----------

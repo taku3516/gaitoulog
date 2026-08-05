@@ -275,7 +275,12 @@ async function handleAuthStateChanged(user) {
         try {
             await bridge()?.stashGuestState?.();
             bridge()?.setCloudActive?.(true);
-            await mergeGuestIntoCloud(user.uid);
+            // 初回マージは退避1つにつき1回だけ。再読み込みのたびにやり直すと、
+            // ログイン後に削除したアカウントや記録がクラウドへ復活してしまう。
+            if (bridge()?.hasGuestMerged?.(user.uid) !== true) {
+                await mergeGuestIntoCloud(user.uid);
+                bridge()?.markGuestMerged?.(user.uid);
+            }
             startListeners(user.uid);
         } catch (error) {
             console.error('初回同期に失敗しました:', error);
@@ -335,6 +340,22 @@ let unsubscribes = [];
 let latestRecords = null;
 let latestPoliticians = null;
 
+// ---------- ローカル変更の保護 ----------
+// クラウドへの書き込みは少し待ってからまとめて送る（scheduleWrite）。
+// その間や、書き込みが拒否されたときに購読側のスナップショットをそのまま
+// 適用すると、まだクラウドに無いローカルの変更が消えてしまう。
+// 確定していない変更をここで覚えておき、適用時に重ね直す。
+const unconfirmedRecords = new Map(); // id -> 正規化済みレコード（未確定の追加・更新）
+const unconfirmedDeletes = new Set(); // 未確定の削除
+let politiciansWritePending = false;  // アカウント一覧の書き込みが未確定
+
+function mergeUnconfirmed(cloudRecords) {
+    const byId = new Map(cloudRecords.map(r => [r.id, r]));
+    for (const id of unconfirmedDeletes) byId.delete(id);
+    for (const [id, record] of unconfirmedRecords) byId.set(id, record);
+    return [...byId.values()];
+}
+
 function startListeners(uid) {
     stopListeners();
     const { collection, onSnapshot } = sdk.store;
@@ -346,7 +367,11 @@ function startListeners(uid) {
 
         if (latestRecords === null || latestPoliticians === null) return;
 
-        bridge()?.applyCloudState?.({ records: latestRecords, politicians: latestPoliticians });
+        bridge()?.applyCloudState?.({
+            records: mergeUnconfirmed(latestRecords),
+            // アカウント一覧の書き込みが未確定の間は、クラウド側の古い一覧で上書きしない
+            politicians: politiciansWritePending ? null : latestPoliticians,
+        });
 
         // 自分の書き込みがまだサーバーに届いていない間は「同期済み」にしない
         if (!snapshot.metadata.hasPendingWrites) {
@@ -367,6 +392,9 @@ function stopListeners() {
     unsubscribes = [];
     latestRecords = null;
     latestPoliticians = null;
+    unconfirmedRecords.clear();
+    unconfirmedDeletes.clear();
+    politiciansWritePending = false;
 }
 
 // ---------- 送信 ----------
@@ -381,9 +409,17 @@ function scheduleWrite(key, fn) {
             await fn();
         } catch (error) {
             console.error('クラウドへの保存に失敗しました:', error);
-            setState({ status: 'error', message: 'クラウドへの保存に失敗しました。' });
+            setState({ status: 'error', message: describeWriteError(error) });
         }
     }, WRITE_DEBOUNCE_MS));
+}
+
+function describeWriteError(error) {
+    if (error?.code === 'permission-denied') {
+        // ルールが古いと、アプリが送る項目がサーバー側で弾かれる
+        return 'クラウドへの保存が拒否されました。Firestoreのセキュリティルールが最新か確認してください。';
+    }
+    return 'クラウドへの保存に失敗しました。この端末のデータは保持されています。';
 }
 
 function currentUid() {
@@ -397,6 +433,12 @@ function recordsChanged(records) {
     const normalized = (records || []).map(normalizeRecord).filter(Boolean);
     if (!normalized.length) return;
 
+    // サーバーが受け取るまではローカルの内容を正とする
+    for (const record of normalized) {
+        unconfirmedRecords.set(record.id, record);
+        unconfirmedDeletes.delete(record.id);
+    }
+
     setState({ status: 'syncing', message: '' });
     scheduleWrite(`records:${normalized.map(r => r.id).join(',')}`, async () => {
         const { writeBatch, doc, serverTimestamp } = sdk.store;
@@ -406,6 +448,10 @@ function recordsChanged(records) {
                 batch.set(doc(db, 'users', uid, 'records', record.id), { ...record, syncedAt: serverTimestamp() });
             }
             await batch.commit();
+        }
+        // 保存できたものだけ保護を解除する（その後さらに編集された分は残す）
+        for (const record of normalized) {
+            if (unconfirmedRecords.get(record.id) === record) unconfirmedRecords.delete(record.id);
         }
     });
 }
@@ -417,6 +463,11 @@ function recordsDeleted(ids) {
     const valid = (ids || []).filter(id => ID_PATTERN.test(id));
     if (!valid.length) return;
 
+    for (const id of valid) {
+        unconfirmedDeletes.add(id);
+        unconfirmedRecords.delete(id);
+    }
+
     setState({ status: 'syncing', message: '' });
     scheduleWrite(`delete:${valid.join(',')}`, async () => {
         const { writeBatch, doc } = sdk.store;
@@ -427,6 +478,7 @@ function recordsDeleted(ids) {
             }
             await batch.commit();
         }
+        for (const id of valid) unconfirmedDeletes.delete(id);
     });
 }
 
@@ -437,6 +489,7 @@ function politiciansChanged(politicians) {
     const normalized = (politicians || []).map(normalizePolitician).filter(Boolean);
     if (!normalized.length) return;
 
+    politiciansWritePending = true;
     scheduleWrite('politicians', async () => {
         const { writeBatch, doc, serverTimestamp, getDocs, collection } = sdk.store;
         const existing = await getDocs(collection(db, 'users', uid, 'politicians'));
@@ -450,6 +503,7 @@ function politiciansChanged(politicians) {
             if (!keep.has(snap.id)) batch.delete(snap.ref);
         }
         await batch.commit();
+        politiciansWritePending = false;
     });
 }
 
