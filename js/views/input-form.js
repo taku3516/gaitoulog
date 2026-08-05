@@ -1,6 +1,7 @@
 // ===== 入力画面（品川区カスタマイズ版） =====
 import * as store from '../store.js';
 import { validateRecord } from '../validation.js';
+import { icon } from '../utils/icons.js';
 
 const THEME_OPTIONS = ['子育て', '防災', '福祉', '交通', '教育', '財政', 'まちづくり'];
 const WEATHER_OPTIONS = ['晴', '曇', '雨', '雪'];
@@ -58,11 +59,11 @@ export async function render(container, { onSaved }) {
     const nowM = (Math.floor(new Date().getMinutes() / 15) * 15).toString().padStart(2, '0');
 
     container.innerHTML = `
-    <div class="view-container">
-      <div class="section-title">${isEdit ? '📝 記録を編集' : '✏️ 新規記録'}</div>
+    <div>
+      <h2 class="section-title">${icon('edit', { size: 19 })}${isEdit ? '記録を編集' : '新しい記録'}</h2>
       <form id="activity-form" novalidate>
         <div class="card">
-          <div class="card-title" style="margin-bottom: var(--spacing-md);">📌 基本情報</div>
+          <div class="card-title" style="margin-bottom: var(--s4);">${icon('pinned')}基本情報</div>
           <div class="form-group">
             <label class="form-label">実施日<span class="required">*</span></label>
             <input type="date" class="form-input" id="f-date" value="${record?.date || today}" required />
@@ -85,7 +86,7 @@ export async function render(container, { onSaved }) {
           </div>
 
           <div class="quick-tags">
-            <div class="quick-tags-title">📍 場所を選択</div>
+            <div class="quick-tags-title">${icon('pin', { size: 14 })}よく使う場所</div>
             <div class="tag-group" id="quick-locations">
               ${locationTags.map(loc => `<button type="button" class="tag ${(record?.area === loc.area && record?.spot === loc.spot) ? 'selected' : ''}" data-area="${loc.area}" data-spot="${loc.spot}">${loc.spot}</button>`).join('')}
             </div>
@@ -133,7 +134,7 @@ export async function render(container, { onSaved }) {
 
         <!-- 追加情報 -->
         <div class="collapsible" id="sec-additional">
-          <div class="collapsible-header"><span class="collapsible-title">🌤️ 追加情報（任意）</span><span class="collapsible-arrow">▼</span></div>
+          <div class="collapsible-header"><span class="collapsible-title">${icon('cloud')}追加情報（任意）</span><span class="collapsible-arrow">${icon('chevronDown', { size: 16 })}</span></div>
           <div class="collapsible-body"><div class="collapsible-content">
             <div class="form-row">
               <div class="form-group">
@@ -173,7 +174,7 @@ export async function render(container, { onSaved }) {
 
         <!-- 反応・成果 -->
         <div class="collapsible" id="sec-reaction">
-          <div class="collapsible-header"><span class="collapsible-title">👥 反応・成果（任意）</span><span class="collapsible-arrow">▼</span></div>
+          <div class="collapsible-header"><span class="collapsible-title">${icon('users')}反応・成果（任意）</span><span class="collapsible-arrow">${icon('chevronDown', { size: 16 })}</span></div>
           <div class="collapsible-body"><div class="collapsible-content">
             <div class="form-row">
               <div class="form-group"><label class="form-label">声かけ数</label><input type="number" class="form-input" id="f-approachCount" inputmode="numeric" min="0" value="${record?.approachCount ?? ''}" /></div>
@@ -195,11 +196,11 @@ export async function render(container, { onSaved }) {
 
         <div id="form-warnings" style="display:none;" class="card"></div>
 
-        <div style="margin-top: var(--spacing-xl); padding-bottom: calc(var(--spacing-2xl) + var(--safe-bottom));">
-          <button type="submit" class="btn btn-primary btn-full" id="btn-save" style="margin-bottom: var(--spacing-md); height: 56px; font-size: var(--font-size-lg);">
-            💾 ${isEdit ? '更新する' : '保存する'}
+        <div style="margin-top: var(--s6); padding-bottom: calc(var(--s7) + var(--safe-bottom));">
+          <button type="submit" class="btn btn-primary btn-full" id="btn-save" style="margin-bottom: var(--s2); height: 50px; font-size: var(--t-base);">
+            ${icon('save', { size: 17 })}${isEdit ? '更新する' : '保存する'}
           </button>
-          ${isEdit ? '<button type="button" class="btn btn-danger btn-full" id="btn-delete" style="height: 56px; font-size: var(--font-size-lg);">🗑️ この記録を削除</button>' : ''}
+          ${isEdit ? `<button type="button" class="btn btn-danger btn-full" id="btn-delete" style="height: 50px;">${icon('trash', { size: 16 })}この記録を削除</button>` : ''}
         </div>
       </form>
     </div>
@@ -292,9 +293,9 @@ async function handleSave(onSaved) {
     if (warnings.length > 0) {
         const warnEl = document.getElementById('form-warnings');
         if (warnEl) {
-            warnEl.style.display = 'block'; warnEl.style.borderColor = 'var(--accent-warning)';
-            warnEl.innerHTML = `<div style="color:var(--accent-warning);font-weight:600;margin-bottom:8px;">⚠️ 警告</div>
-        ${warnings.map(w => `<div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px;">・${w}</div>`).join('')}
+            warnEl.style.display = 'block'; warnEl.style.borderColor = 'var(--caution)';
+            warnEl.innerHTML = `<div class="card-title" style="color:var(--caution);margin-bottom:8px;">${icon('alert')}確認してください</div>
+        ${warnings.map(w => `<div class="text-sm" style="color:var(--ink-secondary);margin-bottom:4px;">・${w}</div>`).join('')}
         <div style="margin-top:12px;display:flex;gap:8px;">
           <button type="button" class="btn btn-primary btn-sm" id="btn-force-save">そのまま保存</button>
           <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-save">キャンセル</button>

@@ -7,6 +7,13 @@ import * as recommendView from './views/recommendations.js';
 import * as dashboard from './views/dashboard.js';
 import * as settingsView from './views/settings.js';
 import * as syncBridge from './sync/bridge.js';
+import { icon } from './utils/icons.js';
+
+// ナビゲーションとタイトルのアイコンを描画する
+document.getElementById('app-title').insertAdjacentHTML('afterbegin', icon('megaphone', { size: 19 }));
+document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.insertAdjacentHTML('afterbegin', icon(btn.dataset.icon, { size: 21 }));
+});
 
 let currentView = 'input';
 const mainContent = document.getElementById('main-content');
@@ -25,7 +32,7 @@ function renderPoliticianSelect() {
     });
     const addOpt = document.createElement('option');
     addOpt.value = '_add_new';
-    addOpt.textContent = '➕ 新規アカウント作成...';
+    addOpt.textContent = '＋ 新規アカウントを作成…';
     polSelect.appendChild(addOpt);
 }
 
@@ -50,7 +57,7 @@ polSelect.addEventListener('change', async (e) => {
 
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
-    toast.textContent = message;
+    toast.innerHTML = icon(type === 'error' ? 'trash' : 'check', { size: 16 }) + `<span>${message}</span>`;
     toast.className = `toast show ${type}`;
     setTimeout(() => { toast.className = 'toast'; }, 2500);
 }
@@ -66,7 +73,7 @@ async function switchView(view, editId = null) {
     
     // 簡易ローディング表示
     if (!mainContent.innerHTML.includes('loading')) {
-        mainContent.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--text-muted);">🔄 読み込み中...</div>';
+        mainContent.innerHTML = '<div class="loading">読み込み中…</div>';
     }
 
     try {
@@ -75,9 +82,9 @@ async function switchView(view, editId = null) {
                 inputForm.setEditingId(editId);
                 await inputForm.render(mainContent, {
                     onSaved: async (action) => {
-                        if (action === 'created') showToast('✅ 保存しました');
-                        else if (action === 'updated') showToast('✅ 更新しました');
-                        else if (action === 'deleted') showToast('🗑️ 削除しました', 'error');
+                        if (action === 'created') showToast('保存しました');
+                        else if (action === 'updated') showToast('更新しました');
+                        else if (action === 'deleted') showToast('削除しました', 'error');
                         await switchView('list');
                     },
                 });
@@ -97,7 +104,8 @@ async function switchView(view, editId = null) {
         }
     } catch(err) {
         console.error('Error rendering view:', err);
-        mainContent.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--accent-error);">⚠️ エラーが発生しました</div>';
+        mainContent.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${icon('alert', { size: 32 })}</div>`
+            + '<div class="empty-state-text">表示中に問題が起きました。<br>画面を切り替えると復帰することがあります。</div></div>';
     } finally {
         isSwitching = false;
         window.scrollTo({ top: 0, behavior: 'smooth' });

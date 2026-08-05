@@ -1,7 +1,22 @@
 // ===== ダッシュボード =====
 import * as store from '../store.js';
+import { icon } from '../utils/icons.js';
 
 const Chart = window.Chart;
+
+// グラフの配色。CSSのデザイントークンと同じ値を使い、画面全体で色を揃える。
+const C = {
+    accent: '#1f4d63',
+    accentSoft: 'rgba(31, 77, 99, 0.10)',
+    secondary: '#7fa3b0',
+    tertiary: '#c08a2e',
+    ink: '#55595a',
+    line: '#e0e0dd',
+    sunken: '#f1f1f0',
+    faint: '#c8c8c4',
+};
+// ヒートマップは色相を変えず、濃度だけで大小を表す
+const HEAT = ['#eef2f4', '#d3e0e5', '#a8c2cc', '#6b93a3', '#1f4d63'];
 let chartInstances = [];
 
 function destroyCharts() {
@@ -35,10 +50,10 @@ export async function render(container) {
 
     if (records.length === 0) {
         container.innerHTML = `
-            <div class="view-container">
-                <div class="section-title">📊 分析ダッシュボード</div>
+            <div>
+                <h2 class="section-title">${icon('chart', { size: 19 })}分析</h2>
                 <div class="empty-state">
-                    <div class="empty-state-icon">📊</div>
+                    <div class="empty-state-icon">${icon('chart', { size: 32 })}</div>
                     <div class="empty-state-text">データがありません。まず活動を記録してください。</div>
                 </div>
             </div>`;
@@ -122,79 +137,75 @@ export async function render(container) {
             return sortConfig.order === 'desc' ? (valB - valA || 0) : (valA - valB || 0);
         });
 
-        const sortIcon = (key) => sortConfig.key === key ? (sortConfig.order === 'desc' ? '▼' : '▲') : '';
+        const sortIcon = (key) => sortConfig.key === key ? (sortConfig.order === 'desc' ? ' ↓' : ' ↑') : '';
 
         let defaultOrder = CHART_CONFIGS.map(c => c.id);
         let chartOrder = JSON.parse(localStorage.getItem(DASHBOARD_ORDER_KEY) || JSON.stringify(defaultOrder));
         CHART_CONFIGS.forEach(c => { if (!chartOrder.includes(c.id)) chartOrder.push(c.id); });
 
         const blocks = {
-            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}"><div class="chart-title"><div>📈 月別推移</div><div class="drag-handle" title="並び替え">≡</div></div><div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
+            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trend')}月別の推移</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
             'location': `<div class="chart-container toggle-target" data-id="location" style="${isHidden('location')}">
-        <div class="chart-title"><div>📍 場所別 配布枚数</div><div class="drag-handle" title="並び替え">≡</div></div>
+        <div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}場所別の配布枚数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
         <div class="data-table-wrapper" style="margin-bottom:0;">
             <div style="min-width: ${Math.max(600, Object.keys(byLocation).length * 60)}px; height: 300px;">
                 <canvas id="chart-location"></canvas>
             </div>
         </div>
-        <div style="font-size:0.7rem; color:var(--text-muted); text-align:center; margin-top:4px;">(横スクロールで全地点を確認できます)</div>
+        <div style="font-size:0.7rem; color:var(--ink-muted); text-align:center; margin-top:4px;">(横スクロールで全地点を確認できます)</div>
       </div>`,
-            'weather': `<div class="chart-container toggle-target" data-id="weather" style="${isHidden('weather')}"><div class="chart-title"><div>🌤️ 天候別 平均配布係数</div><div class="drag-handle" title="並び替え">≡</div></div><div class="chart-canvas-wrapper"><canvas id="chart-weather"></canvas></div></div>`,
-            'daytime': `<div class="chart-container toggle-target" data-id="daytime" style="${isHidden('daytime')}"><div class="chart-title"><div>🗓️ 曜日×時間帯 配布係数</div><div class="drag-handle" title="並び替え">≡</div></div><div class="data-table-wrapper">
-        <table class="data-table heatmap-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--bg-card); box-shadow: 2px 0 4px rgba(0,0,0,0.05);">曜日</th>${hours.map(h => `<th>${h}</th>`).join('')}</tr></thead>
-        <tbody>${dayNames.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--bg-card);font-weight:600;border-right:1px solid var(--border-color); box-shadow: 2px 0 4px rgba(0,0,0,0.05);">${d}</td>${hours.map(h => {
+            'weather': `<div class="chart-container toggle-target" data-id="weather" style="${isHidden('weather')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('cloud')}天候別の平均配布係数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="chart-canvas-wrapper"><canvas id="chart-weather"></canvas></div></div>`,
+            'daytime': `<div class="chart-container toggle-target" data-id="daytime" style="${isHidden('daytime')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('calendar')}曜日×時間帯の配布係数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
+        <table class="data-table heatmap-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface); box-shadow: 1px 0 0 var(--line);">曜日</th>${hours.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${dayNames.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);font-weight:600;border-right:1px solid var(--line); box-shadow: 1px 0 0 var(--line);">${d}</td>${hours.map(h => {
         const cell = dayTimeGrid[d]?.[h];
-        if (!cell || cell.rates.length === 0) return '<td style="background:#f8fafc;color:#cbd5e1;text-align:center;font-size:0.7rem;">-</td>';
+        if (!cell || cell.rates.length === 0) return `<td style="background:${C.sunken};color:${C.faint};">-</td>`;
         const a = avg(cell.rates);
         const aNum = parseFloat(a);
-        let bgColor = '#eff6ff';
-        let textColor = '#1e40af';
-        if (aNum >= 3.0) { bgColor = '#1e3a8a'; textColor = '#fff'; }
-        else if (aNum >= 2.0) { bgColor = '#2563eb'; textColor = '#fff'; }
-        else if (aNum >= 1.0) { bgColor = '#60a5fa'; textColor = '#fff'; }
-        else if (aNum >= 0.5) { bgColor = '#bfdbfe'; textColor = '#1e40af'; }
-        return `<td style="background:${bgColor};color:${textColor};text-align:center;font-weight:700;">${a}</td>`;
+        const step = aNum >= 3.0 ? 4 : aNum >= 2.0 ? 3 : aNum >= 1.0 ? 2 : aNum >= 0.5 ? 1 : 0;
+        const textColor = step >= 3 ? '#ffffff' : C.accent;
+        return `<td style="background:${HEAT[step]};color:${textColor};font-weight:700;">${a}</td>`;
     }).join('')}</tr>`).join('')}</tbody></table></div></div>`,
-            'summary-month': `<div class="chart-container toggle-target" data-id="summary-month" style="${isHidden('summary-month')}"><div class="chart-title"><div>📅 月別サマリー</div><div class="drag-handle" title="並び替え">≡</div></div><div class="data-table-wrapper">
-        <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--bg-card);box-shadow: 2px 0 4px rgba(0,0,0,0.05);">月</th><th>回数</th><th>時間(分)</th><th>配布枚数</th><th>平均係数</th></tr></thead>
-        <tbody>${monthKeys.map(m => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border-color);box-shadow: 2px 0 4px rgba(0,0,0,0.05);">${m}</td><td>${byMonth[m].count}</td><td>${byMonth[m].duration}</td><td>${byMonth[m].dist.toLocaleString()}</td><td>${avg(byMonth[m].rates)}</td></tr>`).join('')}</tbody></table></div></div>`,
+            'summary-month': `<div class="chart-container toggle-target" data-id="summary-month" style="${isHidden('summary-month')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('calendar')}月別サマリー</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
+        <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface);box-shadow: 1px 0 0 var(--line);">月</th><th>回数</th><th>時間(分)</th><th>配布枚数</th><th>平均係数</th></tr></thead>
+        <tbody>${monthKeys.map(m => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);box-shadow: 1px 0 0 var(--line);">${m}</td><td>${byMonth[m].count}</td><td>${byMonth[m].duration}</td><td>${byMonth[m].dist.toLocaleString()}</td><td>${avg(byMonth[m].rates)}</td></tr>`).join('')}</tbody></table></div></div>`,
             'summary-location': `<div class="chart-container toggle-target" data-id="summary-location" style="${isHidden('summary-location')}">
-        <div class="chart-title"><div>📍 場所別サマリー</div><div class="drag-handle" title="並び替え">≡</div></div>
+        <div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}場所別サマリー</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
         <div class="data-table-wrapper" style="max-height: 400px; overflow-y: auto;">
             <table class="data-table">
             <thead style="position: sticky; top: 0; z-index: 20;">
                 <tr>
-                    <th style="position:sticky;left:0;z-index:21;background:var(--bg-card);box-shadow: 2px 0 4px rgba(0,0,0,0.05);">場所</th>
+                    <th style="position:sticky;left:0;z-index:21;background:var(--surface);box-shadow: 1px 0 0 var(--line);">場所</th>
                     <th class="sortable" data-sort="count">回数 ${sortIcon('count')}</th>
                     <th class="sortable" data-sort="duration">時間 ${sortIcon('duration')}</th>
                     <th class="sortable" data-sort="dist">枚数 ${sortIcon('dist')}</th>
                     <th class="sortable" data-sort="avg">係数 ${sortIcon('avg')}</th>
                 </tr>
             </thead>
-            <tbody>${sortedLocations.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border-color);font-weight:600;box-shadow: 2px 0 4px rgba(0,0,0,0.05); white-space: normal; min-width:100px;">${d.loc}</td><td>${d.count}</td><td>${d.duration}</td><td>${d.dist.toLocaleString()}</td><td>${d.avg}</td></tr>`).join('')}</tbody></table>
+            <tbody>${sortedLocations.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);font-weight:600;box-shadow: 1px 0 0 var(--line); white-space: normal; min-width:100px;">${d.loc}</td><td>${d.count}</td><td>${d.duration}</td><td>${d.dist.toLocaleString()}</td><td>${d.avg}</td></tr>`).join('')}</tbody></table>
         </div>
       </div>`,
-            'crosstab': `<div class="chart-container toggle-target" data-id="crosstab" style="${isHidden('crosstab')}"><div class="chart-title"><div>📊 場所×月 クロス集計（配布枚数）</div><div class="drag-handle" title="並び替え">≡</div></div><div class="data-table-wrapper">
-        <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--bg-card);box-shadow: 2px 0 4px rgba(0,0,0,0.05);">場所</th>${monthKeys.map(m => `<th>${m}</th>`).join('')}<th>合計</th></tr></thead>
-        <tbody>${allLocs.map(loc => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--bg-card);border-right:1px solid var(--border-color);font-weight:600;box-shadow: 2px 0 4px rgba(0,0,0,0.05); white-space: normal; min-width:100px;">${loc}</td>${monthKeys.map(m => `<td>${crossTable[loc][m].dist || '-'}</td>`).join('')}<td style="font-weight:700; background:var(--bg-input);">${byLocation[loc].dist.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`,
-            'ranking-location': `<div class="chart-container toggle-target" data-id="ranking-location" style="${isHidden('ranking-location')}"><div class="chart-title"><div>🏆 場所ランキング（配布係数）</div><div class="drag-handle" title="並び替え">≡</div></div>
-        ${locationRanking.map((loc, i) => `<div class="ranking-item"><div class="ranking-rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div><div class="ranking-info"><div class="ranking-name">${loc.name}</div><div class="ranking-stat">係数: <span style="font-weight:600;color:var(--text-primary);">${loc.avgRate}</span> ｜ 配布: ${loc.dist.toLocaleString()}枚 ｜ ${loc.count}回</div></div></div>`).join('')}
+            'crosstab': `<div class="chart-container toggle-target" data-id="crosstab" style="${isHidden('crosstab')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('chart')}場所×月 クロス集計</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
+        <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface);box-shadow: 1px 0 0 var(--line);">場所</th>${monthKeys.map(m => `<th>${m}</th>`).join('')}<th>合計</th></tr></thead>
+        <tbody>${allLocs.map(loc => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);font-weight:600;box-shadow: 1px 0 0 var(--line); white-space: normal; min-width:100px;">${loc}</td>${monthKeys.map(m => `<td>${crossTable[loc][m].dist || '-'}</td>`).join('')}<td style="font-weight:700; background:var(--surface-sunken);">${byLocation[loc].dist.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`,
+            'ranking-location': `<div class="chart-container toggle-target" data-id="ranking-location" style="${isHidden('ranking-location')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trophy')}場所ランキング</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
+        ${locationRanking.map((loc, i) => `<div class="ranking-item"><div class="ranking-rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div><div class="ranking-info"><div class="ranking-name">${loc.name}</div><div class="ranking-stat">係数: <span style="font-weight:600;color:var(--ink);">${loc.avgRate}</span> ｜ 配布: ${loc.dist.toLocaleString()}枚 ｜ ${loc.count}回</div></div></div>`).join('')}
       </div>`
         };
 
         const sortedChartsHTML = chartOrder.map(id => blocks[id] || '').join('');
 
         container.innerHTML = `
-    <div class="view-container">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: var(--spacing-sm);">
-        <div class="section-title" style="border:none; margin:0; padding:0;">📊 分析ダッシュボード</div>
-        <button id="btn-prefs" class="btn btn-secondary btn-sm" style="min-height:30px; padding:4px 8px;">⚙️ 表示設定</button>
+    <div>
+      <div class="list-toolbar" style="margin-bottom: var(--s2);">
+        <h2 class="section-title" style="margin:0;">${icon('chart', { size: 19 })}分析</h2>
+        <button id="btn-prefs" class="btn btn-secondary btn-sm">${icon('settings', { size: 15 })}表示設定</button>
       </div>
-      <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:var(--spacing-md);">
-           👤 ${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
+      <div class="stat-chip" style="margin-bottom:var(--s4);">
+           ${icon('user')}${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
       </div>
 
-      <div id="prefs-panel" style="display:none; background:var(--bg-card); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:var(--spacing-md); margin-bottom:var(--spacing-md);">
+      <div id="prefs-panel" style="display:none; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-control); padding:var(--s4); margin-bottom:var(--s4);">
         <div style="font-weight:600; margin-bottom:8px;">表示する項目を選択</div>
         <div style="display:flex; flex-wrap:wrap; gap:8px;">
           ${CHART_CONFIGS.map(c => `
@@ -206,7 +217,7 @@ export async function render(container) {
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:var(--spacing-sm);margin-bottom:var(--spacing-md);">
+      <div class="stat-grid">
         <div class="stat-card"><div class="stat-card-value">${totalCount}</div><div class="stat-card-label">活動回数</div></div>
         <div class="stat-card"><div class="stat-card-value">${totalDuration}</div><div class="stat-card-label">合計時間(分)</div></div>
         <div class="stat-card"><div class="stat-card-value">${totalDist.toLocaleString()}</div><div class="stat-card-label">合計枚数</div></div>
@@ -268,7 +279,7 @@ export async function render(container) {
 
     function initCharts() {
         destroyCharts();
-        Chart.defaults.color = '#4a5a6a';  Chart.defaults.borderColor = 'rgba(80,129,181,0.1)';
+        Chart.defaults.color = C.ink;  Chart.defaults.borderColor = C.line;
         Chart.defaults.font.family = "'Noto Sans JP', sans-serif";
 
         if (!hiddenCharts.includes('monthly')) {
@@ -277,9 +288,9 @@ export async function render(container) {
                 const ch = new Chart(mc, {
                     type: 'line', data: {
                         labels: monthKeys, datasets: [
-                            { label: '配布枚数', data: monthKeys.map(m => byMonth[m].dist), borderColor: '#5081b5', backgroundColor: 'rgba(80,129,181,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
-                            { label: '活動回数', data: monthKeys.map(m => byMonth[m].count), borderColor: '#3a6a9e', fill: false, tension: 0.3, yAxisID: 'y1' },
-                            { label: '平均係数', data: monthKeys.map(m => { const r = byMonth[m].rates; return r.length > 0 ? parseFloat((r.reduce((a, b) => a + b, 0) / r.length).toFixed(2)) : 0; }), borderColor: '#4caf50', fill: false, tension: 0.3, yAxisID: 'y1' },
+                            { label: '配布枚数', data: monthKeys.map(m => byMonth[m].dist), borderColor: C.accent, backgroundColor: C.accentSoft, fill: true, tension: 0.3, yAxisID: 'y' },
+                            { label: '活動回数', data: monthKeys.map(m => byMonth[m].count), borderColor: C.secondary, fill: false, tension: 0.3, yAxisID: 'y1' },
+                            { label: '平均係数', data: monthKeys.map(m => { const r = byMonth[m].rates; return r.length > 0 ? parseFloat((r.reduce((a, b) => a + b, 0) / r.length).toFixed(2)) : 0; }), borderColor: C.tertiary, fill: false, tension: 0.3, yAxisID: 'y1' },
                         ]
                     }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } }, scales: { y: { type: 'linear', position: 'left', title: { display: true, text: '配布枚数' }, beginAtZero: true, ticks: { stepSize: 100, maxTicksLimit: 10 } }, y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '回数/係数' }, beginAtZero: true, ticks: { stepSize: 1, maxTicksLimit: 10 } } } }
                 }); chartInstances.push(ch);
@@ -288,12 +299,12 @@ export async function render(container) {
 
         if (!hiddenCharts.includes('location')) {
             const lc = document.getElementById('chart-location');
-            if (lc) { const le = Object.entries(byLocation).sort((a, b) => b[1].dist - a[1].dist); const ch = new Chart(lc, { type: 'bar', data: { labels: le.map(([n]) => n), datasets: [{ label: '配布枚_dist', data: le.map(([, d]) => d.dist), backgroundColor: 'rgba(80,129,181,0.6)', borderColor: '#5081b5', borderWidth: 1, borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } }); chartInstances.push(ch); }
+            if (lc) { const le = Object.entries(byLocation).sort((a, b) => b[1].dist - a[1].dist); const ch = new Chart(lc, { type: 'bar', data: { labels: le.map(([n]) => n), datasets: [{ label: '配布枚_dist', data: le.map(([, d]) => d.dist), backgroundColor: C.accent, borderColor: C.accent, borderWidth: 1, borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } }); chartInstances.push(ch); }
         }
 
         if (!hiddenCharts.includes('weather')) {
             const wc = document.getElementById('chart-weather');
-            if (wc) { const we = Object.entries(byWeather); const wColors = { '晴': '#ffa726', '曇': '#78909c', '雨': '#42a5f5', '雪': '#e0e0e0', '未設定': '#555' }; const ch = new Chart(wc, { type: 'bar', data: { labels: we.map(([w]) => w), datasets: [{ label: '平均配布係数', data: we.map(([, d]) => d.rates.length > 0 ? parseFloat((d.rates.reduce((a, b) => a + b, 0) / d.rates.length).toFixed(2)) : 0), backgroundColor: we.map(([w]) => wColors[w] || '#555'), borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } } }); chartInstances.push(ch); }
+            if (wc) { const we = Object.entries(byWeather); const wColors = { '晴': '#c08a2e', '曇': '#8a9296', '雨': '#4a7a94', '雪': '#b8c4c9', '未設定': C.faint }; const ch = new Chart(wc, { type: 'bar', data: { labels: we.map(([w]) => w), datasets: [{ label: '平均配布係数', data: we.map(([, d]) => d.rates.length > 0 ? parseFloat((d.rates.reduce((a, b) => a + b, 0) / d.rates.length).toFixed(2)) : 0), backgroundColor: we.map(([w]) => wColors[w] || '#555'), borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } } }); chartInstances.push(ch); }
         }
     }
 

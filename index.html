@@ -29,32 +29,24 @@
 <body>
     <div id="app">
         <header class="app-header">
-            <h1 class="app-title">
-                <span class="app-icon">📢</span>
-                街頭活動ログ
-            </h1>
+            <h1 class="app-title" id="app-title">街頭活動ログ</h1>
             <select id="politician-select" class="form-select header-select"></select>
         </header>
         <main id="main-content" class="main-content"></main>
         <nav class="bottom-nav">
-            <button class="nav-btn active" data-view="input" id="nav-input">
-                <span class="nav-icon">✏️</span>
+            <button class="nav-btn active" data-view="input" id="nav-input" data-icon="edit">
                 <span class="nav-label">入力</span>
             </button>
-            <button class="nav-btn" data-view="list" id="nav-list">
-                <span class="nav-icon">📋</span>
+            <button class="nav-btn" data-view="list" id="nav-list" data-icon="list">
                 <span class="nav-label">一覧</span>
             </button>
-            <button class="nav-btn" data-view="recommend" id="nav-recommend">
-                <span class="nav-icon">💡</span>
+            <button class="nav-btn" data-view="recommend" id="nav-recommend" data-icon="idea">
                 <span class="nav-label">提案</span>
             </button>
-            <button class="nav-btn" data-view="dashboard" id="nav-dashboard">
-                <span class="nav-icon">📊</span>
+            <button class="nav-btn" data-view="dashboard" id="nav-dashboard" data-icon="chart">
                 <span class="nav-label">分析</span>
             </button>
-            <button class="nav-btn" data-view="settings" id="nav-settings">
-                <span class="nav-icon">⚙️</span>
+            <button class="nav-btn" data-view="settings" id="nav-settings" data-icon="settings">
                 <span class="nav-label">設定</span>
             </button>
         </nav>
