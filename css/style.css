@@ -755,6 +755,32 @@ main {
 .status-line.is-error { color: var(--critical); }
 .status-line.is-done { color: var(--positive); }
 
+/* ===== アカウント一覧（設定画面） ===== */
+.account-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s3);
+    padding: var(--s3) 0;
+    border-top: 1px solid var(--line);
+}
+.account-row:first-child { border-top: none; padding-top: 0; }
+.account-info { min-width: 0; }
+.account-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    word-break: break-word;
+}
+.account-meta {
+    margin-top: 2px;
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+}
+.account-delete { flex-shrink: 0; }
+.account-delete[disabled] { opacity: 0.45; cursor: not-allowed; }
+
 .loading {
     padding: var(--s7) 0;
     text-align: center;

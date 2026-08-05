@@ -2,9 +2,11 @@
 // クラウド同期が未設定（enabled: false）のときは同期UIを一切表示しない。
 
 import { icon } from '../utils/icons.js';
+import * as store from '../store.js';
 
 let unsubscribe = null;
 let rememberDevice = false;
+let accountRows = [];
 
 function escapeHtml(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => (
@@ -24,8 +26,21 @@ const STATUS_TEXT = {
     error: '',
 };
 
-export async function render(container) {
+/** アカウント一覧と記録件数を読み込む */
+async function loadAccounts() {
+    const counts = await store.countRecordsByPolitician();
+    const currentId = store.getCurrentPoliticianId();
+    accountRows = store.getPoliticians().map(p => ({
+        id: p.id,
+        name: p.name,
+        count: counts[p.id] || 0,
+        isCurrent: p.id === currentId,
+    }));
+}
+
+export async function render(container, { onAccountsChanged } = {}) {
     dispose();
+    await loadAccounts();
 
     function statusLine(state) {
         const message = state.message || STATUS_TEXT[state.status] || '';
@@ -33,6 +48,35 @@ export async function render(container) {
         const modifier = state.status === 'error' ? ' is-error' : state.status === 'synced' ? ' is-done' : '';
         const mark = state.status === 'error' ? 'alert' : state.status === 'synced' ? 'check' : 'refresh';
         return `<div class="status-line${modifier}">${icon(mark, { size: 14 })}<span>${escapeHtml(message)}</span></div>`;
+    }
+
+    function accountsSection() {
+        const onlyOne = accountRows.length <= 1;
+        const rows = accountRows.map(a => `
+            <div class="account-row">
+                <div class="account-info">
+                    <div class="account-name">
+                        ${escapeHtml(a.name)}
+                        ${a.isCurrent ? '<span class="badge">使用中</span>' : ''}
+                    </div>
+                    <div class="account-meta">記録 ${a.count}件</div>
+                </div>
+                <button class="btn btn-danger btn-sm account-delete" data-id="${escapeHtml(a.id)}" ${onlyOne ? 'disabled' : ''}>
+                    ${icon('trash', { size: 15 })}削除
+                </button>
+            </div>
+        `).join('');
+
+        return `
+            <div class="card">
+                <div class="card-title">${icon('users')}アカウント</div>
+                <p class="text-xs text-muted" style="margin: 10px 0 12px; line-height: 1.8;">
+                    アカウントを削除すると、そのアカウントの活動記録もすべて削除されます。この操作は取り消せません。
+                    ${onlyOne ? '<br>アカウントが1つのときは削除できません。' : ''}
+                </p>
+                <div class="account-list">${rows}</div>
+            </div>
+        `;
     }
 
     function renderBody() {
@@ -109,6 +153,7 @@ export async function render(container) {
         container.innerHTML = `
             <div id="settings-root">
                 <h2 class="section-title">${icon('settings', { size: 19 })}設定</h2>
+                ${accountsSection()}
                 ${syncSection}
             </div>
         `;
@@ -116,6 +161,10 @@ export async function render(container) {
     }
 
     function attachHandlers() {
+        document.querySelectorAll('.account-delete').forEach(btn => {
+            btn.addEventListener('click', () => handleDeleteAccount(btn.dataset.id));
+        });
+
         document.getElementById('remember-device')?.addEventListener('change', (e) => {
             rememberDevice = e.target.checked;
         });
@@ -133,6 +182,29 @@ export async function render(container) {
             if (!confirm('クラウド上のすべてのデータとアカウントを削除します。\nこの操作は取り消せません。続行しますか？')) return;
             cloud()?.deleteAccountAndData();
         });
+    }
+
+    async function handleDeleteAccount(id) {
+        const target = accountRows.find(a => a.id === id);
+        if (!target) return;
+
+        const message = `アカウント「${target.name}」を削除します。\n`
+            + (target.count > 0 ? `このアカウントの活動記録 ${target.count}件 もあわせて削除されます。\n` : '')
+            + (target.isCurrent ? '削除後は別のアカウントに切り替わります。\n' : '')
+            + '\nこの操作は取り消せません。続行しますか？';
+        if (!confirm(message)) return;
+
+        const result = await store.removePolitician(id);
+        if (!result.removed) {
+            alert(result.reason === 'last'
+                ? 'アカウントが1つのときは削除できません。'
+                : 'このアカウントは見つかりませんでした。');
+            return;
+        }
+
+        await loadAccounts();
+        if (document.getElementById('settings-root')) renderBody();
+        onAccountsChanged?.();
     }
 
     renderBody();
