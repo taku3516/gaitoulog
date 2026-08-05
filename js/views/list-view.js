@@ -4,6 +4,39 @@ import { exportToCSV } from '../utils/csv-export.js';
 import { parseCSV, readCSVFile } from '../utils/csv-import.js';
 import { icon, weatherIcon } from '../utils/icons.js';
 
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+
+/** 値が入っている項目だけを { ラベル: 値 } の並びにする */
+function detailRows(record) {
+    const rows = [];
+    const push = (label, value, unit = '') => {
+        if (value === '' || value === null || value === undefined) return;
+        rows.push({ label, value: String(value), unit });
+    };
+
+    push('参加人数', record.volunteerCount > 0 ? record.volunteerCount : '', ' 名');
+    push('参加者', record.volunteerNames);
+    push('気温', record.temperature, ' ℃');
+    push('実施形態', [record.formType, record.micType, record.groupType].filter(Boolean).join(' / '));
+    push('テーマ', (record.themes || []).join('・'));
+    push('配布物', (record.materials || []).join('・'));
+    push('声かけ数', record.approachCount, ' 人');
+    push('立ち止まり', record.stopCount, ' 人');
+    push('受取拒否', record.refusalCount, ' 人');
+    push('受取率', record.acceptRate);
+    push('新規連絡先', record.newContactCount, ' 件');
+    push('寄附/カンパ', record.donationCount, ' 件');
+    push('QR/URL誘導', record.qrCount, ' 件');
+    push('住所', record.address);
+    if (record.hasTrouble) push('トラブル', record.troubleNote || 'あり');
+
+    return rows;
+}
+
 export async function render(container, { onEdit }) {
     const areas = await store.getUniqueAreas();
     let filterPeriod = 'all', sortBy = 'date-desc', customStart = '', customEnd = '';
@@ -88,15 +121,15 @@ export async function render(container, { onEdit }) {
           <input type="checkbox" class="bulk-cb" data-id="${r.id}" ${selectedForDelete.has(r.id) ? 'checked' : ''} aria-label="選択">
         </div>
         <div class="list-card-content" data-id="${r.id}">
-            <div class="list-card-location">${r.area} ／ ${r.spot}</div>
-            <div class="list-card-date">${r.date}（${r.dayOfWeek}）${r.startTime}〜${r.endTime}${r.weather ? weatherMark(r.weather) : ''}</div>
+            <div class="list-card-location">${esc(r.area)} ／ ${esc(r.spot)}</div>
+            <div class="list-card-date">${esc(r.date)}（${esc(r.dayOfWeek)}）${esc(r.startTime)}〜${esc(r.endTime)}${r.weather ? weatherMark(r.weather) : ''}</div>
             <div class="list-card-stats">
               <span class="stat-chip">${icon('page')}<span class="stat-value">${r.distributionCount}</span>枚</span>
               <span class="stat-chip">${icon('clock')}<span class="stat-value">${r.duration || '-'}</span>分</span>
               <span class="stat-chip">${icon('trend')}<span class="stat-value">${r.distributionRate != null ? r.distributionRate : '-'}</span>枚/分</span>
               ${r.volunteerCount > 0 ? `<span class="stat-chip">${icon('users')}<span class="stat-value">${r.volunteerCount}</span>名</span>` : ''}
             </div>
-            ${(r.themes?.length > 0) ? `<div class="list-card-tags">${r.themes.map(t => `<span class="mini-tag">${t}</span>`).join('')}</div>` : ''}
+            ${(r.themes?.length > 0) ? `<div class="list-card-tags">${r.themes.map(t => `<span class="mini-tag">${esc(t)}</span>`).join('')}</div>` : ''}
             ${r.hasTrouble ? `<div class="list-card-tags"><span class="badge badge-warning">トラブルあり</span></div>` : ''}
         </div>
       </div>
@@ -130,23 +163,36 @@ export async function render(container, { onEdit }) {
             modal.className = 'modal-overlay';
             document.body.appendChild(modal);
         }
+        // 地区と地名は同じ値でも両方そのまま出す
+        const place = [record.area, record.locality].filter(Boolean);
+        const rows = detailRows(record);
+
         modal.style.display = 'flex';
         modal.innerHTML = `
             <div class="modal-sheet">
                 <div class="modal-head">
                     <div>
-                        <div class="modal-title">${record.spot}</div>
-                        <div class="modal-sub">${record.area}${record.locality ? `｜${record.locality}` : ''}｜${record.date}（${record.dayOfWeek}）${record.startTime}〜${record.endTime}</div>
+                        <div class="modal-title">${esc(record.spot)}</div>
+                        <div class="modal-sub">${esc(place.join('｜'))}｜${esc(record.date)}（${esc(record.dayOfWeek)}）${esc(record.startTime)}〜${esc(record.endTime)}</div>
                     </div>
                     <button id="close-modal" class="btn btn-secondary btn-sm" aria-label="閉じる">${icon('close', { size: 15 })}</button>
                 </div>
                 <div class="detail-grid">
-                    <div><span class="detail-label">配布枚数</span><span class="detail-value">${record.distributionCount}</span><span class="detail-unit"> 枚</span></div>
+                    <div><span class="detail-label">配布枚数</span><span class="detail-value">${esc(record.distributionCount)}</span><span class="detail-unit"> 枚</span></div>
                     <div><span class="detail-label">配布効率</span><span class="detail-value">${record.distributionRate ?? '-'}</span><span class="detail-unit"> 枚/分</span></div>
                     <div><span class="detail-label">活動時間</span><span class="detail-value">${record.duration ?? '-'}</span><span class="detail-unit"> 分</span></div>
-                    <div><span class="detail-label">天候</span><span class="detail-value">${record.weather || '-'}</span></div>
+                    <div><span class="detail-label">天候</span><span class="detail-value">${esc(record.weather || '-')}</span></div>
                 </div>
-                ${record.memo ? `<div style="margin-bottom:var(--s4);"><span class="detail-label">メモ</span><p class="text-sm" style="margin:4px 0 0;">${record.memo}</p></div>` : ''}
+                ${rows.length ? `
+                <div class="detail-list">
+                    ${rows.map(r => `
+                        <div class="detail-list-row">
+                            <span class="detail-label">${esc(r.label)}</span>
+                            <span class="detail-list-value">${esc(r.value)}${r.unit ? `<span class="detail-unit">${esc(r.unit)}</span>` : ''}</span>
+                        </div>
+                    `).join('')}
+                </div>` : ''}
+                ${record.memo ? `<div style="margin-bottom:var(--s4);"><span class="detail-label">メモ</span><p class="text-sm" style="margin:4px 0 0; white-space:pre-wrap;">${esc(record.memo)}</p></div>` : ''}
                 <div class="modal-actions">
                     <button id="modal-edit" class="btn btn-primary">${icon('edit', { size: 16 })}編集する</button>
                     <button id="modal-delete" class="btn btn-danger">${icon('trash', { size: 16 })}削除</button>
