@@ -345,7 +345,7 @@ export async function getRecentLocations(limit = 5) {
     const result = [];
     for (const r of records) {
         const key = `${r.area}|${r.spot}`;
-        if (!seen.has(key)) { seen.add(key); result.push({ area: r.area, spot: r.spot }); if (result.length >= limit) break; }
+        if (!seen.has(key)) { seen.add(key); result.push({ area: r.area, locality: r.locality || '', spot: r.spot }); if (result.length >= limit) break; }
     }
     return result;
 }
@@ -368,6 +368,10 @@ export async function getRecentMaterials() {
 
 export async function getUniqueAreas() {
     return [...new Set((await getAll()).map(r => r.area).filter(Boolean))];
+}
+
+export async function getUniqueLocalities() {
+    return [...new Set((await getAll()).map(r => r.locality).filter(Boolean))];
 }
 
 export async function getUniqueSpots() {

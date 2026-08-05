@@ -45,6 +45,8 @@ await expectDenied('負の配布枚数は拒否', setDoc(doc(A,'users/userA/reco
 await expectDenied('型違い(distributionCount が文字列)は拒否', setDoc(doc(A,'users/userA/records/rec13'), validRecord('rec13',{ distributionCount: '42' })));
 await expectDenied('不正な文字を含むIDは拒否', setDoc(doc(A,'users/userA/records/bad id!'), validRecord('bad id!')));
 await expectOk('気温は負の値を許可', setDoc(doc(A,'users/userA/records/rec14'), validRecord('rec14',{ temperature: -5 })));
+await expectOk('地名(locality)を書ける', setDoc(doc(A,'users/userA/records/rec15'), validRecord('rec15',{ locality: '戸越' })));
+await expectDenied('文字数超過(locality)は拒否', setDoc(doc(A,'users/userA/records/rec16'), validRecord('rec16',{ locality: 'あ'.repeat(101) })));
 
 const validPolitician = (id='pol1', o={}) => ({ id, name: '第2アカウント', schemaVersion: 1, syncedAt: serverTimestamp(), ...o });
 await expectOk('本人はアカウントを書ける', setDoc(doc(A,'users/userA/politicians/pol1'), validPolitician()));

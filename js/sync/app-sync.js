@@ -66,7 +66,7 @@ const ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 
 const STRING_LIMITS = {
     dayOfWeek: 2, yearMonth: 7, startTime: 5, endTime: 5,
-    date: 10, area: 100, spot: 100,
+    date: 10, area: 100, locality: 100, spot: 100,
     weather: 20, formType: 20, micType: 20, groupType: 20,
     volunteerNames: 500, troubleNote: 1000, memo: 2000,
     createdAt: 30, updatedAt: 30, politicianId: 80,

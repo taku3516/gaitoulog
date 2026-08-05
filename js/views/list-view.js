@@ -136,7 +136,7 @@ export async function render(container, { onEdit }) {
                 <div class="modal-head">
                     <div>
                         <div class="modal-title">${record.spot}</div>
-                        <div class="modal-sub">${record.area}｜${record.date}（${record.dayOfWeek}）${record.startTime}〜${record.endTime}</div>
+                        <div class="modal-sub">${record.area}${record.locality ? `｜${record.locality}` : ''}｜${record.date}（${record.dayOfWeek}）${record.startTime}〜${record.endTime}</div>
                     </div>
                     <button id="close-modal" class="btn btn-secondary btn-sm" aria-label="閉じる">${icon('close', { size: 15 })}</button>
                 </div>
