@@ -40,6 +40,12 @@ window.GAITOULOG_SYNC_BRIDGE = Object.freeze({
     /** 退避しておいたゲスト状態を返す */
     getGuestState: () => store.getGuestSnapshot(),
 
+    /** この退避データを指定アカウントへマージ済みか（初回マージを1度だけにする） */
+    hasGuestMerged: (uid) => store.hasGuestMergedInto(uid),
+
+    /** マージ済みとして記録する */
+    markGuestMerged: (uid) => store.markGuestMergedInto(uid),
+
     /** いま画面に出ている状態 */
     getCurrentState: async () => ({
         records: await store.getAllRaw(),
