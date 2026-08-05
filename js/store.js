@@ -52,13 +52,41 @@ export function addPolitician(name) {
     return id;
 }
 
-export function removePolitician(id) {
-    if (id === 'default') return false;
+/**
+ * アカウントを1つ削除する。そのアカウントの活動記録もあわせて削除する。
+ * 最後の1つは削除できない（アプリが表示するアカウントが無くなるため）。
+ * @returns {Promise<{removed: boolean, reason?: 'last'|'notFound', deletedRecordCount?: number}>}
+ */
+export async function removePolitician(id) {
+    if (!politicians.some(p => p.id === id)) return { removed: false, reason: 'notFound' };
+    if (politicians.length <= 1) return { removed: false, reason: 'last' };
+
+    const deletedRecordCount = await removeRecordsOfPolitician(id);
+
     politicians = politicians.filter(p => p.id !== id);
     localStorage.setItem(ALL_POLITICIANS_KEY, JSON.stringify(politicians));
-    if (currentPoliticianId === id) setCurrentPoliticianId('default');
+    if (currentPoliticianId === id) setCurrentPoliticianId(politicians[0].id);
     emitChange({ type: 'politicians', politicians: getPoliticians(), removedId: id });
-    return true;
+    return { removed: true, deletedRecordCount };
+}
+
+/** アカウントごとの記録件数を { politicianId: 件数 } で返す */
+export async function countRecordsByPolitician() {
+    const counts = {};
+    for (const r of await getAllRaw()) {
+        const key = r.politicianId || 'default';
+        counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+}
+
+/** 指定アカウントの記録をすべて削除し、削除件数を返す */
+async function removeRecordsOfPolitician(id) {
+    const targetIds = (await getAllRaw())
+        .filter(r => (r.politicianId || 'default') === id)
+        .map(r => r.id);
+    if (targetIds.length) await bulkRemove(targetIds);
+    return targetIds.length;
 }
 
 /**

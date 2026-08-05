@@ -99,7 +99,13 @@ async function switchView(view, editId = null) {
                 await dashboard.render(mainContent);
                 break;
             case 'settings':
-                await settingsView.render(mainContent);
+                await settingsView.render(mainContent, {
+                    // アカウントを削除したらヘッダーの選択欄を作り直す
+                    onAccountsChanged: () => {
+                        renderPoliticianSelect();
+                        showToast('アカウントを削除しました', 'error');
+                    },
+                });
                 break;
         }
     } catch(err) {
