@@ -3,6 +3,7 @@ import * as store from '../store.js';
 import { exportToCSV } from '../utils/csv-export.js';
 import { parseCSV, readCSVFile } from '../utils/csv-import.js';
 import { icon, weatherIcon } from '../utils/icons.js';
+import { openShareDialog } from '../share-report.js';
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => (
@@ -136,6 +137,11 @@ export async function render(container, { onEdit }) {
     `).join('');
 
         document.getElementById('list-count').textContent = `${filtered.length}件`;
+        const selectFilteredButton = document.getElementById('btn-select-filtered');
+        if (selectFilteredButton) {
+            const allVisibleSelected = filtered.length > 0 && filtered.every(record => selectedForDelete.has(record.id));
+            selectFilteredButton.textContent = allVisibleSelected ? '表示中の選択解除' : '表示中を選択';
+        }
 
         // Edit entry action
         document.querySelectorAll('.list-card-content').forEach(card => card.addEventListener('click', () => {
@@ -215,11 +221,15 @@ export async function render(container, { onEdit }) {
 
     function updateBulkActionUI() {
         const btnDeleteMsg = document.getElementById('btn-bulk-delete');
+        const btnShare = document.getElementById('btn-share-selected');
         if (selectedForDelete.size > 0) {
             btnDeleteMsg.style.display = 'inline-block';
             btnDeleteMsg.textContent = `選択中を削除 (${selectedForDelete.size})`;
+            btnShare.style.display = 'inline-block';
+            btnShare.textContent = `選択中を共有 (${selectedForDelete.size})`;
         } else {
             btnDeleteMsg.style.display = 'none';
+            btnShare.style.display = 'none';
         }
     }
 
@@ -249,10 +259,12 @@ export async function render(container, { onEdit }) {
       <div class="list-toolbar">
         <span id="list-count" class="badge">0件</span>
         <div class="list-toolbar-actions">
-          <button class="btn btn-danger btn-sm" id="btn-bulk-delete" style="display:none;"></button>
-          <button class="btn btn-danger btn-sm" id="btn-delete-all">全件削除</button>
+          <button class="btn btn-primary btn-sm" id="btn-share-selected" style="display:none;"></button>
+          <button class="btn btn-secondary btn-sm" id="btn-select-filtered">表示中を選択</button>
           <button class="btn btn-secondary btn-sm" id="btn-import">${icon('upload')}取込</button>
           <button class="btn btn-secondary btn-sm" id="btn-export">${icon('download')}出力</button>
+          <button class="btn btn-danger btn-sm" id="btn-bulk-delete" style="display:none;"></button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-all">全件削除</button>
         </div>
       </div>
       <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
@@ -269,6 +281,16 @@ export async function render(container, { onEdit }) {
     if (ei) ei.addEventListener('change', () => { customEnd = ei.value; renderList(); });
 
     document.getElementById('btn-export').addEventListener('click', () => { const f = applyFilters(); if (f.length === 0) { alert('エクスポートするデータがありません。'); return; } exportToCSV(f); });
+    document.getElementById('btn-select-filtered').addEventListener('click', () => {
+        const filtered = applyFilters();
+        const allSelected = filtered.length > 0 && filtered.every(record => selectedForDelete.has(record.id));
+        filtered.forEach(record => allSelected ? selectedForDelete.delete(record.id) : selectedForDelete.add(record.id));
+        renderList();
+    });
+    document.getElementById('btn-share-selected').addEventListener('click', () => {
+        const selected = allRecords.filter(record => selectedForDelete.has(record.id));
+        openShareDialog(selected);
+    });
 
     // 3-2 Bulk Delete
     document.getElementById('btn-bulk-delete').addEventListener('click', async () => {

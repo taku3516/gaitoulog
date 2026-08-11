@@ -1,4 +1,5 @@
 // 品川区内の街頭活動スポット。保存形式との互換性のため、地区は area キーで扱う。
+import { SPOT_COORDINATES } from '../data/spot-coordinates.js';
 export const LOCATION_CATALOG = [
     { area: '品川', locality: '北品川', spot: '北品川駅前' },
     { area: '品川', locality: '北品川', spot: '新馬場駅前' },
@@ -62,9 +63,44 @@ export const LOCATION_CATALOG = [
     { area: '八潮', locality: '八潮', spot: '八潮団地' },
 ];
 
+// 表示名を変更しない限り端末・ブラウザ間で同じ値になる、標準スポット用ID。
+// 利用者が追加するスポットは spot-store.js でランダムIDを発行する。
+function stableHash(value) {
+    let hash = 2166136261;
+    for (const char of value) {
+        hash ^= char.codePointAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+}
+
+export function getPresetSpotId(location) {
+    return `preset_${stableHash(`${location.area}|${location.locality || ''}|${location.spot}`)}`;
+}
+
+export function getPresetSpots() {
+    return LOCATION_CATALOG.map(location => {
+        const id = getPresetSpotId(location);
+        const coordinates = SPOT_COORDINATES[id] || {};
+        return {
+            ...location,
+            id,
+            lat: Number.isFinite(location.lat) ? location.lat : (coordinates.lat ?? null),
+            lng: Number.isFinite(location.lng) ? location.lng : (coordinates.lng ?? null),
+            coordinateStatus: coordinates.status || (Number.isFinite(location.lat) ? 'verified' : 'missing'),
+            source: 'preset',
+            archived: false,
+        };
+    });
+}
+
 export function findLocationBySpot(spot) {
     const normalized = String(spot || '').trim();
     return LOCATION_CATALOG.find(location => location.spot === normalized) || null;
+}
+
+export function findLocationById(id) {
+    return getPresetSpots().find(location => location.id === id) || null;
 }
 
 export function findLocationInText(text) {

@@ -339,6 +339,44 @@ main {
 .btn-sm { padding: 6px 11px; font-size: var(--t-xs); }
 .btn-sm .icon { width: 15px; height: 15px; }
 
+/* ===== 活動タイマー ===== */
+.timer-card { border-color: var(--line-strong); }
+.timer-card.is-running { border-color: var(--accent); background: var(--accent-subtle); }
+.timer-card.is-ended { border-color: var(--positive); background: #eef6f1; }
+.timer-card-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.timer-card-row .section-note { margin: var(--s1) 0 0; }
+.timer-status-label { color: var(--accent); font-size: var(--t-xs); font-weight: 700; letter-spacing: .04em; }
+.timer-location { margin-top: var(--s2); color: var(--ink-secondary); font-size: var(--t-sm); font-weight: 600; }
+.timer-elapsed { margin: var(--s2) 0 var(--s3); color: var(--ink); font-size: clamp(2rem, 12vw, 3.25rem); font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; letter-spacing: .02em; }
+.timer-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.location-map-actions { margin: var(--s3) 0 var(--s4); }
+
+/* ===== スポット地図 ===== */
+.map-modal-overlay { align-items: stretch; padding: 0; }
+.modal-overlay .map-modal-sheet { width: min(760px, 100%); max-height: 100vh; margin: 0 auto; border-radius: 0; overflow-y: auto; }
+.map-toolbar { display: flex; gap: var(--s2); margin-bottom: var(--s2); }
+.spot-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.spot-map { width: 100%; height: min(52vh, 440px); min-height: 300px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface-sunken); }
+.map-status { min-height: 28px; padding: var(--s2) 0; color: var(--ink-secondary); }
+.map-selection-card, .map-add-form { padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r-surface); background: var(--surface); }
+.map-selection-area { color: var(--ink-secondary); font-size: var(--t-sm); }
+.map-selection-name { margin-bottom: var(--s3); font-size: var(--t-md); font-weight: 700; }
+.nearby-list { display: grid; gap: var(--s2); }
+.nearby-item { display: flex; justify-content: space-between; width: 100%; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface); color: var(--ink); font: inherit; text-align: left; }
+.nearby-item strong { color: var(--accent); font-size: var(--t-sm); }
+.activity-map-controls, .activity-map-range { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
+.activity-map-canvas { height: min(55vh, 460px); min-height: 320px; border: 1px solid var(--line); border-radius: var(--r-control); }
+.activity-map-legend { display: flex; align-items: center; justify-content: center; gap: var(--s1); margin: var(--s2) 0; color: var(--ink-muted); font-size: var(--t-xs); }
+.activity-map-legend i { display: block; width: 22px; height: 8px; background: var(--accent); opacity: .3; }
+.activity-map-legend i:nth-of-type(2) { opacity: .45; }
+.activity-map-legend i:nth-of-type(3) { background: var(--caution); opacity: .65; }
+.activity-map-legend i:nth-of-type(4) { background: var(--critical); opacity: .85; }
+.share-modal-sheet { width: min(620px, 100%); }
+.share-preview { min-height: 300px; }
+.share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s3); }
+.chart-title-actions { display: flex; align-items: center; gap: var(--s2); }
+.share-chart-preview { display: block; width: 100%; max-height: 58vh; object-fit: contain; margin-bottom: var(--s3); border: 1px solid var(--line); background: #fff; }
+
 /* ===== 選択タグ ===== */
 .tag-group { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s4); }
 .tag {

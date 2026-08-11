@@ -3,10 +3,13 @@
 
 import { icon } from '../utils/icons.js';
 import * as store from '../store.js';
+import * as spotStore from '../spot-store.js';
+import { openMapPicker } from '../map-picker.js';
 
 let unsubscribe = null;
 let rememberDevice = false;
 let accountRows = [];
+let customSpotRows = [];
 
 function escapeHtml(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => (
@@ -36,6 +39,7 @@ async function loadAccounts() {
         count: counts[p.id] || 0,
         isCurrent: p.id === currentId,
     }));
+    customSpotRows = spotStore.getCustomSpots({ includeArchived: true });
 }
 
 export async function render(container, { onAccountsChanged } = {}) {
@@ -77,6 +81,26 @@ export async function render(container, { onAccountsChanged } = {}) {
                 <div class="account-list">${rows}</div>
             </div>
         `;
+    }
+
+    function spotsSection() {
+        const rows = customSpotRows.length ? customSpotRows.map(spot => `
+            <div class="account-row">
+                <div class="account-info">
+                    <div class="account-name">${escapeHtml(spot.spot)}${spot.archived ? '<span class="badge">非表示</span>' : ''}</div>
+                    <div class="account-meta">${spot.id.startsWith('preset_') ? '標準ピン変更' : '追加ピン'} ／ ${escapeHtml(spot.area)}${spot.locality ? ` ／ ${escapeHtml(spot.locality)}` : ''}</div>
+                </div>
+                <div class="spot-row-actions">
+                  <button class="btn btn-secondary btn-sm spot-edit" data-id="${escapeHtml(spot.id)}">編集</button>
+                  <button class="btn btn-secondary btn-sm spot-archive" data-id="${escapeHtml(spot.id)}" data-archived="${spot.archived}">${spot.archived ? '再表示' : '非表示'}</button>
+                </div>
+            </div>`).join('') : '<p class="text-sm text-muted" style="margin:10px 0 0;">追加・変更したスポットはまだありません。</p>';
+        return `<div class="card">
+          <div class="card-title">${icon('pin')}追加スポット</div>
+          <p class="text-xs text-muted" style="margin:10px 0 12px;line-height:1.8;">標準ピンの位置・名称を変更したり、新しいピンを追加できます。変更はすべてのアカウントで共通です。Googleログイン中は端末間で同期されます。</p>
+          <button class="btn btn-primary btn-full" id="spot-map-manage" style="margin-bottom:12px;">地図でピンを追加・編集</button>
+          <div class="account-list">${rows}</div>
+        </div>`;
     }
 
     function renderBody() {
@@ -140,7 +164,7 @@ export async function render(container, { onAccountsChanged } = {}) {
                 <div class="card">
                     <div class="card-title" style="color: var(--critical);">${icon('trash')}クラウドのデータを削除</div>
                     <p class="text-xs" style="margin: 10px 0 12px; color: var(--ink-secondary); line-height: 1.8;">
-                        クラウド上の活動記録とアカウント情報をすべて削除し、この連携を解除します。
+                        クラウド上の活動記録、アカウント情報、追加スポットをすべて削除し、この連携を解除します。
                         確認のためGoogleの再ログインを求められます。この操作は取り消せません。
                     </p>
                     <button class="btn btn-danger btn-full" id="cloud-delete" ${state.busy ? 'disabled' : ''}>
@@ -154,6 +178,7 @@ export async function render(container, { onAccountsChanged } = {}) {
             <div id="settings-root">
                 <h2 class="section-title">${icon('settings', { size: 19 })}設定</h2>
                 ${accountsSection()}
+                ${spotsSection()}
                 ${syncSection}
             </div>
         `;
@@ -163,6 +188,17 @@ export async function render(container, { onAccountsChanged } = {}) {
     function attachHandlers() {
         document.querySelectorAll('.account-delete').forEach(btn => {
             btn.addEventListener('click', () => handleDeleteAccount(btn.dataset.id));
+        });
+        document.querySelectorAll('.spot-archive').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                spotStore.archiveCustomSpot(btn.dataset.id, btn.dataset.archived !== 'true');
+                await loadAccounts();
+                if (document.getElementById('settings-root')) renderBody();
+            });
+        });
+        document.getElementById('spot-map-manage')?.addEventListener('click', () => openSpotManager());
+        document.querySelectorAll('.spot-edit').forEach(btn => {
+            btn.addEventListener('click', () => openSpotManager(btn.dataset.id));
         });
 
         document.getElementById('remember-device')?.addEventListener('change', (e) => {
@@ -181,6 +217,17 @@ export async function render(container, { onAccountsChanged } = {}) {
         document.getElementById('cloud-delete')?.addEventListener('click', () => {
             if (!confirm('クラウド上のすべてのデータとアカウントを削除します。\nこの操作は取り消せません。続行しますか？')) return;
             cloud()?.deleteAccountAndData();
+        });
+    }
+
+    function openSpotManager(initialSpotId = '') {
+        openMapPicker({
+            manage: true,
+            initialSpotId,
+            onSaved: async () => {
+                await loadAccounts();
+                if (document.getElementById('settings-root')) renderBody();
+            },
         });
     }
 
