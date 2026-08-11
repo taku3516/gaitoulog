@@ -90,7 +90,7 @@ export async function render(container, { onEdit }) {
         // Render Filters
         const filtersAreaHTML = areas.length === 0 ? '' : `
             <div style="margin-bottom: 12px;">
-                <div class="filter-heading">エリア</div>
+                <div class="filter-heading">地区</div>
                 <div class="tag-group">
                     ${areas.map(a => `<button type="button" class="tag filter-area-btn ${selectedAreas.includes(a) ? 'selected' : ''}" data-val="${a}">${a}</button>`).join('')}
                 </div>

@@ -7,7 +7,7 @@ export function validateRecord(record, allRecords = []) {
     if (!record.date) errors.date = '実施日を入力してください';
     if (!record.startTime) errors.startTime = '開始時間を入力してください';
     if (!record.endTime) errors.endTime = '終了時間を入力してください';
-    if (!record.area || !record.area.trim()) errors.area = 'エリアを入力してください';
+    if (!record.area || !record.area.trim()) errors.area = '地区を入力してください';
     if (!record.spot || !record.spot.trim()) errors.spot = 'スポット名を入力してください';
     if (record.distributionCount === '' || record.distributionCount === undefined || record.distributionCount === null) {
         errors.distributionCount = '配布枚数を入力してください';
