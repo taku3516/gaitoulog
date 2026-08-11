@@ -30,3 +30,6 @@ backups/
 *.db
 *.backup
 街頭活動ログ_*.csv
+
+# 一時的なジオコーディング候補（確定座標は data/spot-coordinates.js）
+data/spot-geocode-review.json

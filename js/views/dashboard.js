@@ -1,6 +1,8 @@
 // ===== ダッシュボード =====
 import * as store from '../store.js';
 import { icon } from '../utils/icons.js';
+import { renderActivityMap } from '../activity-map.js';
+import { openShareDialog, openChartShareDialog } from '../share-report.js';
 
 const Chart = window.Chart;
 
@@ -41,7 +43,8 @@ const CHART_CONFIGS = [
     { id: 'summary-month', title: '月別サマリー' },
     { id: 'summary-location', title: '場所別サマリー' },
     { id: 'crosstab', title: '場所×月 クロス集計' },
-    { id: 'ranking-location', title: '場所ランキング' }
+    { id: 'ranking-location', title: '場所ランキング' },
+    { id: 'activity-map', title: '活動量マップ' },
 ];
 
 export async function render(container) {
@@ -144,9 +147,9 @@ export async function render(container) {
         CHART_CONFIGS.forEach(c => { if (!chartOrder.includes(c.id)) chartOrder.push(c.id); });
 
         const blocks = {
-            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trend')}月別の推移</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
+            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trend')}月別の推移</div><div class="chart-title-actions"><button class="btn btn-secondary btn-sm chart-share" data-canvas="chart-monthly" data-title="月別の推移">画像共有</button><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div></div><div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
             'location': `<div class="chart-container toggle-target" data-id="location" style="${isHidden('location')}">
-        <div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}場所別の配布枚数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
+        <div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}場所別の配布枚数</div><div class="chart-title-actions"><button class="btn btn-secondary btn-sm chart-share" data-canvas="chart-location" data-title="場所別の配布枚数">画像共有</button><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div></div>
         <div class="data-table-wrapper" style="margin-bottom:0;">
             <div style="min-width: ${Math.max(600, Object.keys(byLocation).length * 60)}px; height: 300px;">
                 <canvas id="chart-location"></canvas>
@@ -154,7 +157,7 @@ export async function render(container) {
         </div>
         <div style="font-size:0.7rem; color:var(--ink-muted); text-align:center; margin-top:4px;">(横スクロールで全地点を確認できます)</div>
       </div>`,
-            'weather': `<div class="chart-container toggle-target" data-id="weather" style="${isHidden('weather')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('cloud')}天候別の平均配布係数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="chart-canvas-wrapper"><canvas id="chart-weather"></canvas></div></div>`,
+            'weather': `<div class="chart-container toggle-target" data-id="weather" style="${isHidden('weather')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('cloud')}天候別の平均配布係数</div><div class="chart-title-actions"><button class="btn btn-secondary btn-sm chart-share" data-canvas="chart-weather" data-title="天候別の平均配布係数">画像共有</button><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div></div><div class="chart-canvas-wrapper"><canvas id="chart-weather"></canvas></div></div>`,
             'daytime': `<div class="chart-container toggle-target" data-id="daytime" style="${isHidden('daytime')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('calendar')}曜日×時間帯の配布係数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
         <table class="data-table heatmap-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface); box-shadow: 1px 0 0 var(--line);">曜日</th>${hours.map(h => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${dayNames.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);font-weight:600;border-right:1px solid var(--line); box-shadow: 1px 0 0 var(--line);">${d}</td>${hours.map(h => {
@@ -190,7 +193,8 @@ export async function render(container) {
         <tbody>${allLocs.map(loc => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);font-weight:600;box-shadow: 1px 0 0 var(--line); white-space: normal; min-width:100px;">${loc}</td>${monthKeys.map(m => `<td>${crossTable[loc][m].dist || '-'}</td>`).join('')}<td style="font-weight:700; background:var(--surface-sunken);">${byLocation[loc].dist.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`,
             'ranking-location': `<div class="chart-container toggle-target" data-id="ranking-location" style="${isHidden('ranking-location')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trophy')}場所ランキング</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
         ${locationRanking.map((loc, i) => `<div class="ranking-item"><div class="ranking-rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div><div class="ranking-info"><div class="ranking-name">${loc.name}</div><div class="ranking-stat">係数: <span style="font-weight:600;color:var(--ink);">${loc.avgRate}</span> ｜ 配布: ${loc.dist.toLocaleString()}枚 ｜ ${loc.count}回</div></div></div>`).join('')}
-      </div>`
+      </div>`,
+            'activity-map': `<div class="chart-container toggle-target" data-id="activity-map" style="${isHidden('activity-map')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}活動量マップ</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div id="activity-map-root"></div></div>`
         };
 
         const sortedChartsHTML = chartOrder.map(id => blocks[id] || '').join('');
@@ -199,7 +203,7 @@ export async function render(container) {
     <div>
       <div class="list-toolbar" style="margin-bottom: var(--s2);">
         <h2 class="section-title" style="margin:0;">${icon('chart', { size: 19 })}分析</h2>
-        <button id="btn-prefs" class="btn btn-secondary btn-sm">${icon('settings', { size: 15 })}表示設定</button>
+        <div class="list-toolbar-actions"><button id="btn-share-dashboard" class="btn btn-primary btn-sm">${icon('upload', { size: 15 })}共有</button><button id="btn-prefs" class="btn btn-secondary btn-sm">${icon('settings', { size: 15 })}表示設定</button></div>
       </div>
       <div class="stat-chip" style="margin-bottom:var(--s4);">
            ${icon('user')}${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
@@ -235,6 +239,10 @@ export async function render(container) {
             const panel = document.getElementById('prefs-panel');
             panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
         });
+        document.getElementById('btn-share-dashboard').addEventListener('click', () => openShareDialog(records));
+        container.querySelectorAll('.chart-share').forEach(button => button.addEventListener('click', () => {
+            openChartShareDialog(document.getElementById(button.dataset.canvas), button.dataset.title);
+        }));
 
         // Config checkboxes
         container.querySelectorAll('.pref-cb').forEach(cb => {
@@ -305,6 +313,10 @@ export async function render(container) {
         if (!hiddenCharts.includes('weather')) {
             const wc = document.getElementById('chart-weather');
             if (wc) { const we = Object.entries(byWeather); const wColors = { '晴': '#c08a2e', '曇': '#8a9296', '雨': '#4a7a94', '雪': '#b8c4c9', '未設定': C.faint }; const ch = new Chart(wc, { type: 'bar', data: { labels: we.map(([w]) => w), datasets: [{ label: '平均配布係数', data: we.map(([, d]) => d.rates.length > 0 ? parseFloat((d.rates.reduce((a, b) => a + b, 0) / d.rates.length).toFixed(2)) : 0), backgroundColor: we.map(([w]) => wColors[w] || '#555'), borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } } }); chartInstances.push(ch); }
+        }
+        if (!hiddenCharts.includes('activity-map')) {
+            const root = document.getElementById('activity-map-root');
+            if (root) renderActivityMap(root, records);
         }
     }
 

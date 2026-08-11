@@ -4,6 +4,7 @@
 // ここが両者の唯一の接点で、公開するのは window.GAITOULOG_SYNC_BRIDGE だけ。
 
 import * as store from '../store.js';
+import * as spotStore from '../spot-store.js';
 
 const CLOUD_ACTIVE_KEY = 'streetActivityLog_cloudActive';
 
@@ -35,10 +36,17 @@ function cloud() {
 
 window.GAITOULOG_SYNC_BRIDGE = Object.freeze({
     /** ログイン前のローカルデータを退避する（初回マージの材料になる） */
-    stashGuestState: () => store.stashGuestSnapshot(),
+    stashGuestState: async () => {
+        await store.stashGuestSnapshot();
+        spotStore.stashGuestSpots();
+    },
 
     /** 退避しておいたゲスト状態を返す */
-    getGuestState: () => store.getGuestSnapshot(),
+    getGuestState: async () => {
+        const snapshot = await store.getGuestSnapshot();
+        if (!snapshot) return null;
+        return { ...snapshot, spots: spotStore.getGuestSpots() };
+    },
 
     /** この退避データを指定アカウントへマージ済みか（初回マージを1度だけにする） */
     hasGuestMerged: (uid) => store.hasGuestMergedInto(uid),
@@ -50,6 +58,7 @@ window.GAITOULOG_SYNC_BRIDGE = Object.freeze({
     getCurrentState: async () => ({
         records: await store.getAllRaw(),
         politicians: store.getPoliticians(),
+        spots: spotStore.getCustomSpots({ includeArchived: true }),
     }),
 
     setCloudActive: (value) => {
@@ -63,15 +72,22 @@ window.GAITOULOG_SYNC_BRIDGE = Object.freeze({
         if (!next) return;
         await store.replaceAllRecords(next.records || []);
         if (next.politicians?.length) store.replacePoliticians(next.politicians);
+        if (Array.isArray(next.spots)) spotStore.replaceCustomSpots(next.spots);
         notifyApplied();
     },
 
     /** ログアウト時: ログイン前のローカル状態へ戻す */
     restoreGuestState: async () => {
         const restored = await store.restoreGuestSnapshot();
-        if (restored) notifyApplied();
-        return restored;
+        const spotsRestored = spotStore.restoreGuestSpots();
+        if (restored || spotsRestored) notifyApplied();
+        return restored || spotsRestored;
     },
+});
+
+spotStore.onChange((event) => {
+    if (!cloudActive || event?.type !== 'spots') return;
+    cloud()?.spotsChanged?.(event.spots);
 });
 
 // ---- アプリ本体の変更をクラウドへ流す ----

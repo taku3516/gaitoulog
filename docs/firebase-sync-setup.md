@@ -184,7 +184,7 @@ appCheck: Object.freeze({ enabled: true, enterpriseSiteKey: '6Lxxxx....' }),
 設定タブ →「クラウドのデータとアカウントを削除」から、次が順に実行されます。
 
 1. Google の再ログインによる本人確認（`reauthenticateWithPopup`）
-2. Firestore 上の全ドキュメントの削除（バッチ分割）
+2. Firestore 上の活動記録・アカウント・追加スポットの全ドキュメントを削除（バッチ分割）
 3. Authentication アカウントの削除（`deleteUser`）
 4. ページの再読み込み
 

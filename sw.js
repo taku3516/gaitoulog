@@ -1,4 +1,4 @@
-const CACHE_NAME = 'street-activity-log-v11';
+const CACHE_NAME = 'street-activity-log-v14';
 
 // 認証・API通信はキャッシュしない（トークン付きの応答を残さないため）
 const NO_CACHE_HOSTS = [
@@ -8,6 +8,7 @@ const NO_CACHE_HOSTS = [
     'identitytoolkit.googleapis.com',
     'securetoken.googleapis.com',
     'firestore.googleapis.com',
+    'tile.openstreetmap.org',
 ];
 
 const STATIC_ASSETS = [
@@ -21,6 +22,11 @@ const STATIC_ASSETS = [
     './js/dummy-data.js',
     './js/validation.js',
     './js/location-catalog.js',
+    './js/spot-store.js',
+    './js/activity-timer.js',
+    './js/map-picker.js',
+    './js/activity-map.js',
+    './js/share-report.js',
     './js/memo-parser.js',
     './js/utils/csv-export.js',
     './js/utils/csv-import.js',
@@ -33,6 +39,7 @@ const STATIC_ASSETS = [
     './js/sync/bridge.js',
     './js/sync/app-sync.js',
     './data/firebase-config.js',
+    './data/spot-coordinates.js',
     './assets/icons/icon.svg'
 ];
 

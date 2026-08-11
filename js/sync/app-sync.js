@@ -66,7 +66,7 @@ const ID_PATTERN = /^[a-zA-Z0-9_-]{1,80}$/;
 
 const STRING_LIMITS = {
     dayOfWeek: 2, yearMonth: 7, startTime: 5, endTime: 5,
-    date: 10, area: 100, locality: 100, spot: 100,
+    date: 10, area: 100, locality: 100, spot: 100, spotId: 80,
     weather: 20, formType: 20, micType: 20, groupType: 20,
     volunteerNames: 500, troubleNote: 1000, memo: 2000,
     createdAt: 30, updatedAt: 30, politicianId: 80,
@@ -145,6 +145,32 @@ function normalizePolitician(politician) {
     if (!name) return null;
     const out = { id: politician.id, name, schemaVersion: SCHEMA_VERSION };
     const updatedAt = normalizeString(politician.updatedAt, 30);
+    if (updatedAt) out.updatedAt = updatedAt;
+    return out;
+}
+
+function normalizeSpot(spot) {
+    if (!spot?.id || !ID_PATTERN.test(spot.id)) return null;
+    const area = normalizeString(spot.area, 100);
+    const locality = normalizeString(spot.locality, 100);
+    const name = normalizeString(spot.spot, 100);
+    const lat = Number(spot.lat);
+    const lng = Number(spot.lng);
+    if (!area || !name || !Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) return null;
+    const out = {
+        id: spot.id,
+        area,
+        spot: name,
+        lat,
+        lng,
+        source: 'custom',
+        archived: Boolean(spot.archived),
+        schemaVersion: SCHEMA_VERSION,
+    };
+    if (locality) out.locality = locality;
+    const createdAt = normalizeString(spot.createdAt, 30);
+    const updatedAt = normalizeString(spot.updatedAt, 30);
+    if (createdAt) out.createdAt = createdAt;
     if (updatedAt) out.updatedAt = updatedAt;
     return out;
 }
@@ -306,12 +332,14 @@ async function mergeGuestIntoCloud(uid) {
     const guest = await bridge()?.getGuestState?.();
     if (!guest) return;
 
-    const [recordSnap, politicianSnap] = await Promise.all([
+    const [recordSnap, politicianSnap, spotSnap] = await Promise.all([
         getDocs(collection(db, 'users', uid, 'records')),
         getDocs(collection(db, 'users', uid, 'politicians')),
+        getDocs(collection(db, 'users', uid, 'spots')),
     ]);
     const existingRecords = new Set(recordSnap.docs.map(d => d.id));
     const existingPoliticians = new Set(politicianSnap.docs.map(d => d.id));
+    const existingSpots = new Set(spotSnap.docs.map(d => d.id));
 
     const pending = [];
     for (const record of guest.records || []) {
@@ -323,6 +351,11 @@ async function mergeGuestIntoCloud(uid) {
         if (existingPoliticians.has(politician.id)) continue;
         const normalized = normalizePolitician(politician);
         if (normalized) pending.push({ path: 'politicians', data: normalized });
+    }
+    for (const spot of guest.spots || []) {
+        if (existingSpots.has(spot.id)) continue;
+        const normalized = normalizeSpot(spot);
+        if (normalized) pending.push({ path: 'spots', data: normalized });
     }
 
     for (let i = 0; i < pending.length; i += BATCH_LIMIT) {
@@ -339,6 +372,7 @@ async function mergeGuestIntoCloud(uid) {
 let unsubscribes = [];
 let latestRecords = null;
 let latestPoliticians = null;
+let latestSpots = null;
 
 // ---------- ローカル変更の保護 ----------
 // クラウドへの書き込みは少し待ってからまとめて送る（scheduleWrite）。
@@ -348,6 +382,7 @@ let latestPoliticians = null;
 const unconfirmedRecords = new Map(); // id -> 正規化済みレコード（未確定の追加・更新）
 const unconfirmedDeletes = new Set(); // 未確定の削除
 let politiciansWritePending = false;  // アカウント一覧の書き込みが未確定
+let spotsWritePending = false;        // スポット一覧の書き込みが未確定
 
 function mergeUnconfirmed(cloudRecords) {
     const byId = new Map(cloudRecords.map(r => [r.id, r]));
@@ -363,14 +398,16 @@ function startListeners(uid) {
     const handle = (kind) => (snapshot) => {
         const docs = snapshot.docs.map(d => fromCloud(d.data()));
         if (kind === 'records') latestRecords = docs;
-        else latestPoliticians = docs;
+        else if (kind === 'politicians') latestPoliticians = docs;
+        else latestSpots = docs;
 
-        if (latestRecords === null || latestPoliticians === null) return;
+        if (latestRecords === null || latestPoliticians === null || latestSpots === null) return;
 
         bridge()?.applyCloudState?.({
             records: mergeUnconfirmed(latestRecords),
             // アカウント一覧の書き込みが未確定の間は、クラウド側の古い一覧で上書きしない
             politicians: politiciansWritePending ? null : latestPoliticians,
+            spots: spotsWritePending ? null : latestSpots,
         });
 
         // 自分の書き込みがまだサーバーに届いていない間は「同期済み」にしない
@@ -384,6 +421,8 @@ function startListeners(uid) {
             err => { console.error('records の購読に失敗:', err); setState({ status: 'error', message: '同期が中断されました。' }); }),
         onSnapshot(collection(db, 'users', uid, 'politicians'), handle('politicians'),
             err => { console.error('politicians の購読に失敗:', err); }),
+        onSnapshot(collection(db, 'users', uid, 'spots'), handle('spots'),
+            err => { console.error('spots の購読に失敗:', err); }),
     ];
 }
 
@@ -392,9 +431,11 @@ function stopListeners() {
     unsubscribes = [];
     latestRecords = null;
     latestPoliticians = null;
+    latestSpots = null;
     unconfirmedRecords.clear();
     unconfirmedDeletes.clear();
     politiciansWritePending = false;
+    spotsWritePending = false;
 }
 
 // ---------- 送信 ----------
@@ -507,6 +548,39 @@ function politiciansChanged(politicians) {
     });
 }
 
+/** アプリ本体から呼ばれる: 利用者追加スポット一覧が変わった */
+function spotsChanged(spots) {
+    const uid = currentUid();
+    if (!uid || !sdk) return;
+    const normalized = (spots || []).map(normalizeSpot).filter(Boolean);
+
+    spotsWritePending = true;
+    setState({ status: 'syncing', message: '' });
+    scheduleWrite('spots', async () => {
+        const { writeBatch, doc, serverTimestamp, getDocs, collection } = sdk.store;
+        const existing = await getDocs(collection(db, 'users', uid, 'spots'));
+        const keep = new Set(normalized.map(spot => spot.id));
+
+        const operations = [];
+        for (const spot of normalized) operations.push({ type: 'set', spot });
+        for (const snap of existing.docs) {
+            if (!keep.has(snap.id)) operations.push({ type: 'delete', snap });
+        }
+        for (let i = 0; i < operations.length; i += BATCH_LIMIT) {
+            const batch = writeBatch(db);
+            for (const operation of operations.slice(i, i + BATCH_LIMIT)) {
+                if (operation.type === 'set') {
+                    batch.set(doc(db, 'users', uid, 'spots', operation.spot.id), { ...operation.spot, syncedAt: serverTimestamp() });
+                } else {
+                    batch.delete(operation.snap.ref);
+                }
+            }
+            await batch.commit();
+        }
+        spotsWritePending = false;
+    });
+}
+
 // ---------- データとアカウントの削除 ----------
 
 async function deleteAccountAndData() {
@@ -525,7 +599,7 @@ async function deleteAccountAndData() {
 
         stopListeners();
 
-        for (const path of ['records', 'politicians']) {
+        for (const path of ['records', 'politicians', 'spots']) {
             const snapshot = await getDocs(collection(db, 'users', user.uid, path));
             const docs = snapshot.docs;
             for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
@@ -561,6 +635,7 @@ window.GAITOULOG_CLOUD = Object.freeze({
     recordsChanged,
     recordsDeleted,
     politiciansChanged,
+    spotsChanged,
 });
 
 if (isConfigured()) {

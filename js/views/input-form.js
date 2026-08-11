@@ -4,6 +4,9 @@ import { validateRecord } from '../validation.js';
 import { icon } from '../utils/icons.js';
 import { LOCATION_CATALOG, findLocationBySpot } from '../location-catalog.js';
 import { parseActivityMemo } from '../memo-parser.js';
+import * as spotStore from '../spot-store.js';
+import * as activityTimer from '../activity-timer.js';
+import { openMapPicker } from '../map-picker.js';
 
 const THEME_OPTIONS = ['子育て', '防災', '福祉', '交通', '教育', '財政', 'まちづくり'];
 const WEATHER_OPTIONS = ['晴', '曇', '雨', '雪'];
@@ -13,6 +16,12 @@ const GROUP_TYPES = ['単独', '複数'];
 
 // 固定地区 (保存データでは互換性のため area キーを継続使用)
 const FIXED_AREAS = ['品川', '大崎', '荏原', '大井', '八潮'];
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
+    ));
+}
 
 let editingId = null;
 let allRecordsCache = [];
@@ -32,6 +41,10 @@ export async function render(container, { onSaved }) {
     const recentThemes = await store.getRecentThemes();
     const recentMaterials = await store.getRecentMaterials(); // (2-3) 過去入力ベース
     allRecordsCache = await store.getAll();
+    const allSpots = spotStore.getAllSpots();
+    const activeTimer = activityTimer.getActiveTimer();
+    const currentPoliticianId = store.getCurrentPoliticianId();
+    const ownTimer = activeTimer?.politicianId === currentPoliticianId ? activeTimer : null;
 
     // テーマタグ (2-4)
     const ALL_THEMES = [...new Set([...THEME_OPTIONS, ...recentThemes])];
@@ -39,20 +52,28 @@ export async function render(container, { onSaved }) {
     // 表示用の場所リスト: 最近使った場所 + プリセット（重複除去）
     const locationTags = [];
     const seen = new Set();
-    for (const loc of [...recentLocations, ...LOCATION_CATALOG]) {
+    for (const loc of [...recentLocations, ...allSpots]) {
         const key = `${loc.area}|${loc.spot}`;
-        if (!seen.has(key)) { seen.add(key); locationTags.push(loc); }
+        if (!seen.has(key)) {
+            seen.add(key);
+            const master = loc.id ? loc : spotStore.findSpot(loc.area, loc.locality, loc.spot);
+            locationTags.push({ ...loc, id: master?.id || '' });
+        }
         if (locationTags.length >= 8) break;
     }
 
     const today = new Date().toISOString().split('T')[0];
     const nowH = new Date().getHours().toString().padStart(2, '0');
     const nowM = (Math.floor(new Date().getMinutes() / 15) * 15).toString().padStart(2, '0');
+    const timerStart = ownTimer ? activityTimer.localDateTimeParts(ownTimer.startedAt) : null;
+    const timerEnd = ownTimer?.endedAt ? activityTimer.localDateTimeParts(ownTimer.endedAt) : null;
+    const initialSpotId = record?.spotId || ownTimer?.spotId || '';
 
     container.innerHTML = `
     <div>
       <h2 class="section-title">${icon('edit', { size: 19 })}${isEdit ? '記録を編集' : '新しい記録'}</h2>
       <form id="activity-form" novalidate>
+        ${isEdit ? '' : renderTimerCard(activeTimer, ownTimer)}
         ${isEdit ? '' : `
         <div class="card memo-import-card">
           <div class="card-title">${icon('page')}メモから入力</div>
@@ -65,31 +86,34 @@ export async function render(container, { onSaved }) {
           <div class="card-title" style="margin-bottom: var(--s4);">${icon('pinned')}基本情報</div>
           <div class="form-group">
             <label class="form-label">実施日<span class="required">*</span></label>
-            <input type="date" class="form-input" id="f-date" value="${record?.date || today}" required />
+            <input type="date" class="form-input" id="f-date" value="${record?.date || timerStart?.date || today}" required />
             <div class="form-error" id="err-date"></div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">開始時間<span class="required">*</span></label>
-              <input type="time" class="form-input" id="f-startTime" value="${record?.startTime || nowH + ':' + nowM}" required />
+              <input type="time" class="form-input" id="f-startTime" value="${record?.startTime || timerStart?.time || nowH + ':' + nowM}" required />
               <div class="form-error" id="err-startTime"></div>
             </div>
             <div class="form-group">
               <label class="form-label">終了時間<span class="required">*</span></label>
-              <input type="time" class="form-input" id="f-endTime" value="${record?.endTime || ''}" required />
+              <input type="time" class="form-input" id="f-endTime" value="${record?.endTime || timerEnd?.time || ''}" required />
               <div class="form-error" id="err-endTime"></div>
             </div>
           </div>
           <div class="form-group">
-            <label class="checkbox-group"><input type="checkbox" id="f-nextDay" ${record?.nextDay ? 'checked' : ''} /> 翌日跨ぎ</label>
+            <label class="checkbox-group"><input type="checkbox" id="f-nextDay" ${(record?.nextDay || (timerStart && timerEnd && timerStart.date !== timerEnd.date)) ? 'checked' : ''} /> 翌日跨ぎ</label>
           </div>
 
           <div class="quick-tags">
             <div class="quick-tags-title">${icon('pin', { size: 14 })}よく使う場所</div>
             <div class="tag-group" id="quick-locations">
-              ${locationTags.map(loc => `<button type="button" class="tag ${(record?.area === loc.area && record?.spot === loc.spot) ? 'selected' : ''}" data-area="${loc.area}" data-locality="${loc.locality || ''}" data-spot="${loc.spot}">${loc.spot}</button>`).join('')}
+              ${locationTags.map(loc => `<button type="button" class="tag ${((record?.area || ownTimer?.area) === loc.area && (record?.spot || ownTimer?.spot) === loc.spot) ? 'selected' : ''}" data-id="${escapeHtml(loc.id || '')}" data-area="${escapeHtml(loc.area)}" data-locality="${escapeHtml(loc.locality || '')}" data-spot="${escapeHtml(loc.spot)}">${escapeHtml(loc.spot)}</button>`).join('')}
             </div>
           </div>
+          ${isEdit ? '' : `<div class="location-map-actions">
+            <button type="button" class="btn btn-secondary btn-full" id="btn-open-map">${icon('pin')}地図・現在地から選択</button>
+          </div>`}
 
           <div class="form-row">
             <div class="form-group">
@@ -97,21 +121,22 @@ export async function render(container, { onSaved }) {
               <!-- 地区の選択肢を固定化 -->
               <select class="form-select" id="f-area">
                 <option value="">選択してください</option>
-                ${areaOptions.map(a => `<option value="${a}" ${record?.area === a ? 'selected' : ''}>${a}</option>`).join('')}
+                ${areaOptions.map(a => `<option value="${a}" ${(record?.area || ownTimer?.area) === a ? 'selected' : ''}>${a}</option>`).join('')}
               </select>
               <div class="form-error" id="err-area"></div>
             </div>
             <div class="form-group">
               <label class="form-label">地名</label>
-              <input type="text" class="form-input" id="f-locality" value="${record?.locality || ''}" placeholder="例：戸越" list="locality-list" />
+              <input type="text" class="form-input" id="f-locality" value="${record?.locality || ownTimer?.locality || ''}" placeholder="例：戸越" list="locality-list" />
               <datalist id="locality-list">${uniqueLocalities.map(l => `<option value="${l}">`).join('')}</datalist>
             </div>
           </div>
 
           <div class="form-group">
             <label class="form-label">スポット<span class="required">*</span></label>
-            <input type="text" class="form-input" id="f-spot" value="${record?.spot || ''}" placeholder="例：大井町駅デッキ上" list="spot-list" />
-            <datalist id="spot-list">${[...new Set([...uniqueSpots, ...LOCATION_CATALOG.map(s => s.spot)])].map(s => `<option value="${s}">`).join('')}</datalist>
+            <input type="hidden" id="f-spotId" value="${escapeHtml(initialSpotId)}" />
+            <input type="text" class="form-input" id="f-spot" value="${record?.spot || ownTimer?.spot || ''}" placeholder="例：大井町駅デッキ上" list="spot-list" />
+            <datalist id="spot-list">${[...new Set([...uniqueSpots, ...allSpots.map(s => s.spot)])].map(s => `<option value="${escapeHtml(s)}">`).join('')}</datalist>
             <div class="form-error" id="err-spot"></div>
           </div>
 
@@ -215,7 +240,9 @@ export async function render(container, { onSaved }) {
     container.querySelectorAll('.collapsible-header').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
 
     const applyLocationForSpot = () => {
-        const location = findLocationBySpot(document.getElementById('f-spot')?.value);
+        const spotName = document.getElementById('f-spot')?.value;
+        const location = allSpots.find(item => item.spot === spotName) || findLocationBySpot(spotName);
+        document.getElementById('f-spotId').value = location?.id || '';
         if (!location) return false;
         document.getElementById('f-area').value = location.area;
         document.getElementById('f-locality').value = location.locality;
@@ -223,6 +250,16 @@ export async function render(container, { onSaved }) {
     };
 
     document.getElementById('f-spot').addEventListener('input', applyLocationForSpot);
+
+    document.getElementById('btn-open-map')?.addEventListener('click', () => {
+        openMapPicker({ onSelect: selected => {
+            document.getElementById('f-area').value = selected.area;
+            document.getElementById('f-locality').value = selected.locality || '';
+            document.getElementById('f-spot').value = selected.spot;
+            document.getElementById('f-spotId').value = selected.id || '';
+            container.querySelectorAll('#quick-locations .tag').forEach(button => button.classList.toggle('selected', button.dataset.id === selected.id));
+        }});
+    });
 
     const applyMemoBtn = document.getElementById('btn-apply-memo');
     if (applyMemoBtn) applyMemoBtn.addEventListener('click', () => {
@@ -260,10 +297,12 @@ export async function render(container, { onSaved }) {
                 document.getElementById('f-area').value = '';
                 document.getElementById('f-locality').value = '';
                 document.getElementById('f-spot').value = '';
+                document.getElementById('f-spotId').value = '';
             } else {
                 document.getElementById('f-area').value = btn.dataset.area;
                 document.getElementById('f-locality').value = btn.dataset.locality || '';
                 document.getElementById('f-spot').value = btn.dataset.spot;
+                document.getElementById('f-spotId').value = btn.dataset.id || '';
                 container.querySelectorAll('#quick-locations .tag').forEach(b => b.classList.remove('selected'));
                 btn.classList.add('selected');
             }
@@ -286,6 +325,81 @@ export async function render(container, { onSaved }) {
     if (deleteBtn) deleteBtn.addEventListener('click', async () => {
         if (confirm('この記録を削除しますか？')) { await store.remove(editingId); editingId = null; onSaved('deleted'); }
     });
+
+    attachTimerHandlers(container, ownTimer, onSaved);
+}
+
+function renderTimerCard(activeTimer, ownTimer) {
+    if (activeTimer && !ownTimer) {
+        return `<div class="card timer-card is-other-account">
+          <div class="card-title">${icon('clock')}別のアカウントで活動中</div>
+          <p class="section-note">活動を開始したアカウントに切り替えると、計測を終了できます。</p>
+        </div>`;
+    }
+    if (!ownTimer) {
+        return `<div class="card timer-card">
+          <div class="timer-card-row">
+            <div><div class="card-title">${icon('clock')}活動タイマー</div><p class="section-note">場所を選んでから開始してください。</p></div>
+            <button type="button" class="btn btn-primary" id="btn-timer-start">活動を開始</button>
+          </div>
+          <div class="form-error" id="timer-error"></div>
+        </div>`;
+    }
+    const ended = ownTimer.status === 'ended';
+    return `<div class="card timer-card ${ended ? 'is-ended' : 'is-running'}">
+      <div class="timer-status-label">${ended ? '終了済み・保存待ち' : '活動中'}</div>
+      <div class="timer-location">${escapeHtml(ownTimer.area)} ／ ${escapeHtml(ownTimer.spot)}</div>
+      <div class="timer-elapsed" id="timer-elapsed">${activityTimer.formatElapsed(activityTimer.elapsedMilliseconds(ownTimer))}</div>
+      <div class="timer-actions">
+        ${ended ? '<span class="text-sm text-muted">実績を入力して保存してください。</span>' : `<button type="button" class="btn btn-primary" id="btn-timer-finish">活動を終了</button>`}
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-timer-cancel">${ended ? '計測を破棄' : '中止'}</button>
+      </div>
+    </div>`;
+}
+
+function attachTimerHandlers(container, ownTimer, onSaved) {
+    const elapsed = document.getElementById('timer-elapsed');
+    if (elapsed && ownTimer?.status === 'running') {
+        const interval = setInterval(() => {
+            if (!document.getElementById('timer-elapsed')) return clearInterval(interval);
+            elapsed.textContent = activityTimer.formatElapsed(activityTimer.elapsedMilliseconds(ownTimer));
+        }, 1000);
+    }
+
+    document.getElementById('btn-timer-start')?.addEventListener('click', async () => {
+        const area = document.getElementById('f-area').value.trim();
+        const locality = document.getElementById('f-locality').value.trim();
+        const spot = document.getElementById('f-spot').value.trim();
+        const error = document.getElementById('timer-error');
+        if (!area || !spot) {
+            error.textContent = '地区とスポットを選択してください。';
+            error.classList.add('visible');
+            document.getElementById('f-spot').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
+        try {
+            activityTimer.startTimer({
+                politicianId: store.getCurrentPoliticianId(),
+                spotId: document.getElementById('f-spotId').value,
+                area, locality, spot,
+            });
+            await render(container, { onSaved });
+        } catch (timerError) {
+            error.textContent = timerError.message;
+            error.classList.add('visible');
+        }
+    });
+
+    document.getElementById('btn-timer-finish')?.addEventListener('click', async () => {
+        activityTimer.finishTimer();
+        await render(container, { onSaved });
+    });
+
+    document.getElementById('btn-timer-cancel')?.addEventListener('click', async () => {
+        if (!confirm('この計測を破棄しますか？')) return;
+        activityTimer.clearTimer();
+        await render(container, { onSaved });
+    });
 }
 
 function getFormData() {
@@ -303,6 +417,7 @@ function getFormData() {
 
     return {
         date: v('f-date'), startTime: v('f-startTime'), endTime: v('f-endTime'), nextDay: c('f-nextDay'),
+        spotId: v('f-spotId'),
         area: v('f-area').trim(), locality: v('f-locality').trim(), spot: v('f-spot').trim(), distributionCount: n('f-distributionCount'),
         volunteerCount: n('f-volunteerCount'), volunteerNames: v('f-volunteerNames'), memo: v('f-memo'),
         weather: v('f-weather'), temperature: n('f-temperature'),
@@ -355,5 +470,10 @@ async function handleSave(onSaved) {
 
 async function doSave(data, onSaved) {
     if (editingId) { await store.update(editingId, data); editingId = null; onSaved('updated'); }
-    else { await store.save(data); onSaved('created'); }
+    else {
+        await store.save(data);
+        const timer = activityTimer.getActiveTimer();
+        if (timer?.politicianId === store.getCurrentPoliticianId()) activityTimer.clearTimer();
+        onSaved('created');
+    }
 }
