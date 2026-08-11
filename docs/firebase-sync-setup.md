@@ -97,10 +97,22 @@ window.GAITOULOG_FIREBASE_SYNC = Object.freeze({
 ## 7. 設定を検査する
 
 ```bash
+node scripts/check-sensitive-data.mjs
 node scripts/check-firebase-config.mjs
 ```
 
-設定漏れ、秘密鍵らしき文字列の混入、ルールファイルの不備を検出します。
+秘密情報・個人情報らしき文字列、設定漏れ、ルールファイルの不備を検出します。
+検出時も秘密値そのものは表示せず、ファイル名・行番号・種類だけを表示します。
+
+コミット前の自動検査を有効にするため、このリポジトリで一度だけ次を実行してください。
+
+```bash
+git config core.hooksPath .githooks
+git config user.email "GitHubの数値ID+ユーザー名@users.noreply.github.com"
+```
+
+GitHub Actionsでも、pushとpull requestのたびに現在のファイルとGit履歴を検査します。
+検査を回避するための `--no-verify` は使用しないでください。
 
 ### ルールのテスト（任意）
 
