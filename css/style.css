@@ -259,6 +259,21 @@ main {
    固有の最小幅より狭くならず、狭い画面で横にはみ出す */
 .form-row > * { min-width: 0; }
 
+.memo-import-card .card-title { margin-bottom: var(--s2); }
+.memo-import-note { margin: 0 0 var(--s3); }
+.memo-import-card .form-textarea { margin-bottom: var(--s3); }
+.memo-import-result {
+    display: none;
+    margin-top: var(--s3);
+    padding: var(--s2) var(--s3);
+    border-radius: var(--r-control);
+    font-size: var(--t-sm);
+    line-height: 1.6;
+}
+.memo-import-result.visible { display: block; }
+.memo-import-result.success { color: var(--positive); background: #eef6f0; }
+.memo-import-result.caution { color: var(--caution); background: var(--caution-bg); }
+
 .form-error {
     display: none;
     margin-top: var(--s1);

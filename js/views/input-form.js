@@ -2,6 +2,8 @@
 import * as store from '../store.js';
 import { validateRecord } from '../validation.js';
 import { icon } from '../utils/icons.js';
+import { LOCATION_CATALOG, findLocationBySpot } from '../location-catalog.js';
+import { parseActivityMemo } from '../memo-parser.js';
 
 const THEME_OPTIONS = ['子育て', '防災', '福祉', '交通', '教育', '財政', 'まちづくり'];
 const WEATHER_OPTIONS = ['晴', '曇', '雨', '雪'];
@@ -9,22 +11,8 @@ const FORM_TYPES = ['定点', '流し'];
 const MIC_TYPES = ['マイク有', 'マイク無'];
 const GROUP_TYPES = ['単独', '複数'];
 
-// 固定エリア (2-2)
+// 固定地区 (保存データでは互換性のため area キーを継続使用)
 const FIXED_AREAS = ['品川', '大崎', '荏原', '大井', '八潮'];
-
-// 品川区の主要スポット（プリセット）
-const PRESET_SPOTS = [
-    { area: '大井', spot: '大井町駅前' },
-    { area: '荏原', spot: '武蔵小山駅前' },
-    { area: '荏原', spot: '戸越銀座商店街' },
-    { area: '荏原', spot: '旗の台駅前' },
-    { area: '大崎', spot: '五反田駅前' },
-    { area: '大崎', spot: '目黒駅前（品川区側）' },
-    { area: '品川', spot: '青物横丁駅前' },
-    { area: '大井', spot: '西大井駅前' },
-    { area: '荏原', spot: '中延駅前' },
-    { area: '品川', spot: '品川シーサイド駅前' },
-];
 
 let editingId = null;
 let allRecordsCache = [];
@@ -39,7 +27,7 @@ export async function render(container, { onSaved }) {
     const recentLocations = await store.getRecentLocations(5);
     const uniqueSpots = await store.getUniqueSpots();
     const uniqueLocalities = await store.getUniqueLocalities();
-    // 固定エリア + 取込済みデータの地区（CSVの地区が固定リストに無くても編集できるように）
+    // 固定地区 + 取込済みデータの地区（CSVの地区が固定リストに無くても編集できるように）
     const areaOptions = [...new Set([...FIXED_AREAS, ...await store.getUniqueAreas()])];
     const recentThemes = await store.getRecentThemes();
     const recentMaterials = await store.getRecentMaterials(); // (2-3) 過去入力ベース
@@ -51,7 +39,7 @@ export async function render(container, { onSaved }) {
     // 表示用の場所リスト: 最近使った場所 + プリセット（重複除去）
     const locationTags = [];
     const seen = new Set();
-    for (const loc of [...recentLocations, ...PRESET_SPOTS]) {
+    for (const loc of [...recentLocations, ...LOCATION_CATALOG]) {
         const key = `${loc.area}|${loc.spot}`;
         if (!seen.has(key)) { seen.add(key); locationTags.push(loc); }
         if (locationTags.length >= 8) break;
@@ -65,6 +53,14 @@ export async function render(container, { onSaved }) {
     <div>
       <h2 class="section-title">${icon('edit', { size: 19 })}${isEdit ? '記録を編集' : '新しい記録'}</h2>
       <form id="activity-form" novalidate>
+        ${isEdit ? '' : `
+        <div class="card memo-import-card">
+          <div class="card-title">${icon('page')}メモから入力</div>
+          <p class="section-note memo-import-note">実施日、時間、スポット、配布枚数を含むメモを貼り付けてください。内容を確認してから保存できます。</p>
+          <textarea class="form-textarea" id="f-importMemo" rows="4" placeholder="例：8/11 7:30〜9:00 大井町駅デッキ上 150枚"></textarea>
+          <button type="button" class="btn btn-secondary btn-full" id="btn-apply-memo">メモを入力欄に反映</button>
+          <div class="memo-import-result" id="memo-import-result" role="status" aria-live="polite"></div>
+        </div>`}
         <div class="card">
           <div class="card-title" style="margin-bottom: var(--s4);">${icon('pinned')}基本情報</div>
           <div class="form-group">
@@ -97,8 +93,8 @@ export async function render(container, { onSaved }) {
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">エリア<span class="required">*</span></label>
-              <!-- 2-2. エリアの選択肢を固定化 -->
+              <label class="form-label">地区<span class="required">*</span></label>
+              <!-- 地区の選択肢を固定化 -->
               <select class="form-select" id="f-area">
                 <option value="">選択してください</option>
                 ${areaOptions.map(a => `<option value="${a}" ${record?.area === a ? 'selected' : ''}>${a}</option>`).join('')}
@@ -114,8 +110,8 @@ export async function render(container, { onSaved }) {
 
           <div class="form-group">
             <label class="form-label">スポット<span class="required">*</span></label>
-            <input type="text" class="form-input" id="f-spot" value="${record?.spot || ''}" placeholder="例：大井町駅前" list="spot-list" />
-            <datalist id="spot-list">${[...new Set([...uniqueSpots, ...PRESET_SPOTS.map(s => s.spot)])].map(s => `<option value="${s}">`).join('')}</datalist>
+            <input type="text" class="form-input" id="f-spot" value="${record?.spot || ''}" placeholder="例：大井町駅デッキ上" list="spot-list" />
+            <datalist id="spot-list">${[...new Set([...uniqueSpots, ...LOCATION_CATALOG.map(s => s.spot)])].map(s => `<option value="${s}">`).join('')}</datalist>
             <div class="form-error" id="err-spot"></div>
           </div>
 
@@ -217,6 +213,43 @@ export async function render(container, { onSaved }) {
 
     // イベント
     container.querySelectorAll('.collapsible-header').forEach(h => h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+
+    const applyLocationForSpot = () => {
+        const location = findLocationBySpot(document.getElementById('f-spot')?.value);
+        if (!location) return false;
+        document.getElementById('f-area').value = location.area;
+        document.getElementById('f-locality').value = location.locality;
+        return true;
+    };
+
+    document.getElementById('f-spot').addEventListener('input', applyLocationForSpot);
+
+    const applyMemoBtn = document.getElementById('btn-apply-memo');
+    if (applyMemoBtn) applyMemoBtn.addEventListener('click', () => {
+        const memoText = document.getElementById('f-importMemo').value.trim();
+        const resultEl = document.getElementById('memo-import-result');
+        if (!memoText) {
+            resultEl.textContent = 'メモを貼り付けてください。';
+            resultEl.className = 'memo-import-result caution visible';
+            return;
+        }
+
+        const { values, found, missing } = parseActivityMemo(memoText);
+        const fieldIds = {
+            date: 'f-date', startTime: 'f-startTime', endTime: 'f-endTime', area: 'f-area',
+            locality: 'f-locality', spot: 'f-spot', distributionCount: 'f-distributionCount',
+        };
+        for (const [key, value] of Object.entries(values)) {
+            if (value === '' || value === null) continue;
+            const field = document.getElementById(fieldIds[key]);
+            if (field) field.value = value;
+        }
+
+        resultEl.textContent = missing.length
+            ? `${found.join('・') || '項目なし'}を反映しました。不足: ${missing.join('・')}`
+            : 'すべての必須項目を反映しました。内容を確認して保存してください。';
+        resultEl.className = `memo-import-result ${missing.length ? 'caution' : 'success'} visible`;
+    });
     
     // 2-1. 基本情報の選択リセット仕様
     container.querySelectorAll('#quick-locations .tag').forEach(btn => {
