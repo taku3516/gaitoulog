@@ -1,4 +1,32 @@
+# OS / dependencies / logs
 .DS_Store
 node_modules/
-.DS_Store
 *.log
+
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*credentials*
+*service-account*
+*service_account*
+
+# Exports, backups, and local databases may contain personal information
+exports/
+private/
+backups/
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.sqlite
+*.sqlite3
+*.db
+*.backup
+街頭活動ログ_*.csv

@@ -10,10 +10,12 @@
 //
 // 終了コード 0 = 問題なし / 1 = 要修正
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, extname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { findSensitiveData } from './check-sensitive-data.mjs';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CONFIG_PATH = join(ROOT, 'data/firebase-config.js');
 const RULES_PATH = join(ROOT, 'firebase/firestore.rules');
 
@@ -28,20 +30,50 @@ function readConfig() {
         return null;
     }
     const source = readFileSync(CONFIG_PATH, 'utf8');
-    // ブラウザ用のファイルをそのまま評価するため、window を用意して実行する
-    const sandbox = { window: {} };
-    try {
-        new Function('window', source)(sandbox.window);
-    } catch (e) {
-        problems.push(`設定ファイルを解釈できません: ${e.message}`);
+    if (!/window\.GAITOULOG_FIREBASE_SYNC\s*=\s*Object\.freeze\(\{/.test(source)) {
+        problems.push('設定ファイルが所定の形式で window.GAITOULOG_FIREBASE_SYNC を定義していません。');
         return null;
     }
-    const config = sandbox.window.GAITOULOG_FIREBASE_SYNC;
-    if (!config) {
-        problems.push('設定ファイルが window.GAITOULOG_FIREBASE_SYNC を定義していません。');
+
+    // 検査対象をNode.jsコードとして実行しない。固定形式からリテラル値だけを読み取る。
+    const readString = (text, key) => {
+        const match = text.match(new RegExp(`\\b${key}\\s*:\\s*(['\"])([^'\"\\r\\n]*)\\1`));
+        return match?.[2];
+    };
+    const readBoolean = (text, key) => {
+        const match = text.match(new RegExp(`\\b${key}\\s*:\\s*(true|false)\\b`));
+        return match ? match[1] === 'true' : undefined;
+    };
+    const readFrozenObject = (key) => {
+        const start = source.match(new RegExp(`\\b${key}\\s*:\\s*Object\\.freeze\\(\\{`));
+        if (!start || start.index === undefined) return null;
+        const bodyStart = start.index + start[0].length;
+        const rest = source.slice(bodyStart);
+        const end = rest.search(/\}\s*\)/);
+        return end < 0 ? null : rest.slice(0, end);
+    };
+
+    const firebaseBlock = readFrozenObject('firebaseConfig');
+    const appCheckBlock = readFrozenObject('appCheck');
+    if (!firebaseBlock || !appCheckBlock) {
+        problems.push('firebaseConfig または appCheck の固定設定ブロックを読み取れません。');
         return null;
     }
-    return config;
+
+    return {
+        enabled: readBoolean(source, 'enabled'),
+        sdkVersion: readString(source, 'sdkVersion'),
+        firebaseConfig: {
+            apiKey: readString(firebaseBlock, 'apiKey'),
+            authDomain: readString(firebaseBlock, 'authDomain'),
+            projectId: readString(firebaseBlock, 'projectId'),
+            appId: readString(firebaseBlock, 'appId'),
+        },
+        appCheck: {
+            enabled: readBoolean(appCheckBlock, 'enabled'),
+            enterpriseSiteKey: readString(appCheckBlock, 'enterpriseSiteKey'),
+        },
+    };
 }
 
 const config = readConfig();
@@ -71,38 +103,11 @@ if (config) {
     }
 }
 
-// ---------- 2. 秘密情報の混入 ----------
+// ---------- 2. 秘密情報・個人情報の混入 ----------
 
-const SECRET_PATTERNS = [
-    { name: '秘密鍵 (PEM)', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-    { name: 'サービスアカウントの private_key', re: /"private_key"\s*:/ },
-    { name: 'サービスアカウントJSON', re: /"type"\s*:\s*"service_account"/ },
-    { name: 'OAuthクライアントシークレット', re: /"client_secret"\s*:/ },
-    { name: 'GOCSPX形式のクライアントシークレット', re: /GOCSPX-[A-Za-z0-9_-]{10,}/ },
-];
-
-const SKIP_DIRS = new Set(['.git', 'node_modules', '.github']);
-const TEXT_EXT = new Set(['.js', '.mjs', '.json', '.html', '.css', '.md', '.rules', '.yml', '.yaml', '.txt', '']);
-
-function walk(dir) {
-    for (const entry of readdirSync(dir)) {
-        if (SKIP_DIRS.has(entry)) continue;
-        const full = join(dir, entry);
-        const st = statSync(full);
-        if (st.isDirectory()) { walk(full); continue; }
-        if (!TEXT_EXT.has(extname(entry))) continue;
-        if (st.size > 2_000_000) continue;
-
-        const content = readFileSync(full, 'utf8');
-        for (const { name, re } of SECRET_PATTERNS) {
-            if (re.test(content)) {
-                problems.push(`秘密情報らしき文字列を検出: ${relative(ROOT, full)} (${name})`);
-            }
-        }
-    }
+for (const finding of findSensitiveData({ root: ROOT })) {
+    problems.push(`秘密情報・個人情報の可能性: ${finding.path}:${finding.line} (${finding.label})`);
 }
-
-walk(ROOT);
 
 // ---------- 3. Firestore ルール ----------
 

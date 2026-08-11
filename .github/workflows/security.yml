@@ -1,0 +1,38 @@
+name: Security checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sensitive-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the scanner
+        run: node --test scripts/check-sensitive-data.test.mjs
+
+      - name: Scan current files
+        run: node scripts/check-sensitive-data.mjs
+
+      - name: Scan Git history
+        run: node scripts/check-sensitive-data.mjs --history
+
+      - name: Validate Firebase configuration and rules
+        run: node scripts/check-firebase-config.mjs
