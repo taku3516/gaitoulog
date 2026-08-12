@@ -6,6 +6,7 @@ import {
     openShareDialog,
     openImageShareDialog,
     createChartImage,
+    createChartsImage,
     createTableImage,
     createRankingImage,
 } from '../share-report.js';
@@ -36,6 +37,11 @@ function avg(arr) {
     return arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : '-';
 }
 
+// グラフの系列には数値が要るので、記録が無い区分は0として扱う
+function avgNum(arr) {
+    return arr.length > 0 ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2)) : 0;
+}
+
 const DASHBOARD_PREFS_KEY = 'streetActivityLogs_dashboardPrefs';
 let hiddenCharts = JSON.parse(localStorage.getItem(DASHBOARD_PREFS_KEY) || '[]');
 const DASHBOARD_ORDER_KEY = 'streetActivityLogs_dashboardOrder';
@@ -43,15 +49,114 @@ let sortConfig = { key: 'count', order: 'desc' };
 
 const CHART_CONFIGS = [
     { id: 'monthly', title: '月別推移' },
+    { id: 'cumulative', title: '累積配布枚数と目標' },
     { id: 'location', title: '場所別 配布枚数' },
     { id: 'weather', title: '天候別 平均配布係数' },
+    { id: 'timeband', title: '時間帯・曜日別 配布係数' },
+    { id: 'duration-band', title: '活動時間の長さ別 効率' },
     { id: 'daytime', title: '曜日×時間帯 配布係数' },
     { id: 'summary-month', title: '月別サマリー' },
     { id: 'summary-location', title: '場所別サマリー' },
     { id: 'crosstab', title: '場所×月 クロス集計' },
     { id: 'ranking-location', title: '場所ランキング' },
+    { id: 'revisit', title: 'ご無沙汰スポット' },
     { id: 'activity-map', title: '活動量マップ' },
 ];
+
+// 開始時刻の時間帯。街頭活動の時間の区切りに合わせている。
+const TIME_BANDS = [
+    { label: '早朝', from: 5, to: 8 },
+    { label: '朝', from: 8, to: 10 },
+    { label: '午前', from: 10, to: 12 },
+    { label: '昼', from: 12, to: 14 },
+    { label: '午後', from: 14, to: 17 },
+    { label: '夕方', from: 17, to: 19 },
+    { label: '夜', from: 19, to: 24 },
+    { label: '深夜', from: 0, to: 5 },
+];
+
+const DURATION_BANDS = [
+    { label: '〜30分', max: 30 },
+    { label: '31〜45分', max: 45 },
+    { label: '46〜60分', max: 60 },
+    { label: '61〜90分', max: 90 },
+    { label: '91分〜', max: Infinity },
+];
+
+// 配布目標は表示設定と同じく端末ごとに持つ。政治家アカウント単位で切り替える。
+const GOAL_KEY = 'streetActivityLogs_distributionGoals';
+
+function readGoals() {
+    try { return JSON.parse(localStorage.getItem(GOAL_KEY) || '{}'); } catch { return {}; }
+}
+
+function getGoal() {
+    const goal = readGoals()[store.getCurrentPoliticianId()];
+    return { target: goal?.target ?? '', deadline: goal?.deadline ?? '' };
+}
+
+function saveGoal(goal) {
+    const all = readGoals();
+    all[store.getCurrentPoliticianId()] = goal;
+    localStorage.setItem(GOAL_KEY, JSON.stringify(all));
+}
+
+function todayISO() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// 日付は文字列のまま扱い、タイムゾーンで1日ずれないようUTCの通し日数で引き算する
+function toDayNumber(dateStr) {
+    const [year, month, day] = String(dateStr).split('-').map(Number);
+    return Date.UTC(year, month - 1, day) / 86400000;
+}
+
+function daysBetween(fromDate, toDate) {
+    return Math.round(toDayNumber(toDate) - toDayNumber(fromDate));
+}
+
+/** 経過日数の目盛りを日付表記へ戻す */
+function dateFromOffset(startDate, offset) {
+    const date = new Date((toDayNumber(startDate) + offset) * 86400000);
+    return `${String(date.getUTCFullYear()).slice(2)}/${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
+}
+
+/**
+ * 累積配布枚数と目標ペースの系列、進捗の説明文を作る。
+ * 横軸は最初の活動日からの経過日数。日付を等間隔に並べると、
+ * 活動していない期間が詰まって目標ペースの線が歪むため。
+ * 目標が未設定なら累積の系列だけを返す。
+ */
+function buildGoalView(cumulative, goal, today) {
+    const start = cumulative[0]?.date || '';
+    const achieved = cumulative.at(-1)?.total || 0;
+    const actual = cumulative.map(row => ({ x: daysBetween(start, row.date), y: row.total }));
+    const target = Number(goal.target);
+    const lastOffset = actual.at(-1)?.x ?? 0;
+
+    if (!start) return { start, actual, pace: null, maxX: 0, note: '' };
+    if (!Number.isFinite(target) || target <= 0 || !goal.deadline) {
+        return { start, actual, pace: null, maxX: lastOffset, note: '目標枚数と期日を入れると、目標ペースの線と必要ペースが表示されます。' };
+    }
+    const span = daysBetween(start, goal.deadline);
+    if (span <= 0) {
+        return { start, actual, pace: null, maxX: lastOffset, note: `目標期日は最初の活動日（${start}）より後の日付を入れてください。` };
+    }
+
+    const pace = [{ x: 0, y: 0 }, { x: span, y: target }];
+    const rate = Math.round((achieved / target) * 100);
+    const remaining = target - achieved;
+    const daysLeft = daysBetween(today, goal.deadline);
+    const elapsed = Math.max(1, daysBetween(start, today));
+    const currentPace = (achieved / elapsed).toFixed(1);
+    const parts = [`達成率 ${rate}%（${achieved.toLocaleString()} / ${target.toLocaleString()}枚）`];
+    if (remaining <= 0) parts.push('目標を達成しています。');
+    else if (daysLeft <= 0) parts.push(`目標期日（${goal.deadline}）を過ぎています。あと${remaining.toLocaleString()}枚です。`);
+    else parts.push(`残り${daysLeft}日であと${remaining.toLocaleString()}枚。1日あたり${Math.ceil(remaining / daysLeft).toLocaleString()}枚が必要です（これまでは1日あたり${currentPace}枚）。`);
+
+    return { start, actual, pace, maxX: Math.max(lastOffset, span), note: parts.join('　') };
+}
 
 const DRAG_HANDLE = `<div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div>`;
 
@@ -157,6 +262,67 @@ export async function render(container) {
     const hours = [];
     for (let h = 6; h <= 21; h++) hours.push(h);
 
+    // 時間帯別・曜日別。記録のある区分だけを並べる。
+    const byTimeBand = TIME_BANDS.map(band => {
+        const matched = records.filter(r => r.hour != null && r.hour >= band.from && r.hour < band.to);
+        return {
+            label: band.label,
+            count: matched.length,
+            dist: matched.reduce((s, r) => s + (r.distributionCount || 0), 0),
+            rates: matched.filter(r => r.distributionRate != null).map(r => r.distributionRate),
+        };
+    }).filter(band => band.count > 0);
+
+    const byDayOfWeek = dayNames.map(day => {
+        const matched = records.filter(r => r.dayOfWeek === day);
+        return {
+            label: day,
+            count: matched.length,
+            dist: matched.reduce((s, r) => s + (r.distributionCount || 0), 0),
+            rates: matched.filter(r => r.distributionRate != null).map(r => r.distributionRate),
+        };
+    }).filter(day => day.count > 0);
+
+    // 1回の活動時間の長さ別。長く続けると効率が落ちるかを見る。
+    const byDurationBand = DURATION_BANDS.map((band, index) => {
+        const min = index === 0 ? 0 : DURATION_BANDS[index - 1].max;
+        const matched = records.filter(r => (r.duration || 0) > min && (r.duration || 0) <= band.max);
+        return {
+            label: band.label,
+            count: matched.length,
+            avgDist: matched.length ? Math.round(matched.reduce((s, r) => s + (r.distributionCount || 0), 0) / matched.length) : 0,
+            rates: matched.filter(r => r.distributionRate != null).map(r => r.distributionRate),
+        };
+    }).filter(band => band.count > 0);
+
+    // ご無沙汰スポット。最終活動日からの経過日数が長い順。
+    const today = todayISO();
+    const revisitRows = Object.entries(byLocation).map(([loc, d]) => {
+        const latestDate = records
+            .filter(r => `${r.area} / ${r.spot}` === loc)
+            .reduce((latest, r) => (r.date > latest ? r.date : latest), '');
+        return {
+            loc,
+            latestDate,
+            days: latestDate ? daysBetween(latestDate, today) : null,
+            count: d.count,
+            dist: d.dist,
+            avgRate: avg(d.rates),
+        };
+    }).sort((a, b) => (b.days ?? -1) - (a.days ?? -1));
+
+    // 累積配布枚数。活動日ごとに積み上げる。
+    const dailyTotals = new Map();
+    records.forEach(r => {
+        dailyTotals.set(r.date, (dailyTotals.get(r.date) || 0) + (r.distributionCount || 0));
+    });
+    const activityDates = [...dailyTotals.keys()].sort();
+    let running = 0;
+    const cumulative = activityDates.map(date => {
+        running += dailyTotals.get(date);
+        return { date, total: running };
+    });
+
     const isHidden = (id) => hiddenCharts.includes(id) ? 'display:none;' : '';
 
     function renderInternal() {
@@ -169,12 +335,48 @@ export async function render(container) {
         });
 
         const sortIcon = (key) => sortConfig.key === key ? (sortConfig.order === 'desc' ? ' ↓' : ' ↑') : '';
+        const goal = getGoal();
 
         // 各ダッシュボードの共有画像。表示中の並び順・絞り込みをそのまま画像にする。
         const shareBuilders = {
             'monthly': () => createChartImage(document.getElementById('chart-monthly'), '月別の推移', { subtitle: periodSubtitle }),
             'location': () => createChartImage(document.getElementById('chart-location'), '場所別の配布枚数', { subtitle: periodSubtitle }),
             'weather': () => createChartImage(document.getElementById('chart-weather'), '天候別の平均配布係数', { subtitle: periodSubtitle }),
+            'cumulative': () => createChartImage(document.getElementById('chart-cumulative'), '累積配布枚数と目標', {
+                subtitle: periodSubtitle,
+                note: buildGoalView(cumulative, getGoal(), today).note,
+            }),
+            'timeband': () => createChartsImage([
+                { canvas: document.getElementById('chart-timeband'), caption: '時間帯別（開始時刻）' },
+                { canvas: document.getElementById('chart-dayofweek'), caption: '曜日別' },
+            ], '時間帯・曜日別の配布係数', {
+                subtitle: periodSubtitle,
+                note: '括弧内は活動回数です。回数が少ない区分は差が偶然の可能性があります。',
+            }),
+            'duration-band': () => createChartImage(document.getElementById('chart-duration-band'), '活動時間の長さ別の効率', {
+                subtitle: periodSubtitle,
+                note: '1回あたりの活動時間で分けています。括弧内は活動回数です。',
+            }),
+            'revisit': () => createTableImage({
+                title: 'ご無沙汰スポット',
+                subtitle: periodSubtitle,
+                note: `最終活動日からの経過日数が長い順です。${today}時点。`,
+                columns: [
+                    { label: '場所', min: 280, max: 460 },
+                    { label: '最終活動日', align: 'center', min: 160 },
+                    { label: '経過日数', align: 'right', min: 120 },
+                    { label: '回数', align: 'right' },
+                    { label: '平均係数', align: 'right' },
+                ],
+                rows: revisitRows.map(row => [
+                    { text: row.loc, bold: true },
+                    row.latestDate || '-',
+                    { text: row.days == null ? '-' : `${row.days}日`, bold: true, color: row.days >= 60 ? '#9b2c2c' : row.days >= 30 ? '#8a5a12' : C.ink },
+                    row.count,
+                    row.avgRate,
+                ]),
+                maxRows: 20,
+            }),
             'daytime': () => createTableImage({
                 title: '曜日×時間帯の配布係数',
                 subtitle: periodSubtitle,
@@ -276,6 +478,37 @@ export async function render(container) {
 
         const blocks = {
             'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}">${chartHead('trend', '月別の推移', 'monthly')}<div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
+            'cumulative': `<div class="chart-container toggle-target" data-id="cumulative" style="${isHidden('cumulative')}">${chartHead('trend', '累積配布枚数と目標', 'cumulative')}
+        <div class="chart-controls">
+          <input type="number" class="filter-select" id="goal-target" inputmode="numeric" min="0" placeholder="目標枚数" value="${goal.target}" aria-label="目標枚数">
+          <input type="date" class="filter-select" id="goal-deadline" value="${goal.deadline}" aria-label="目標期日">
+        </div>
+        <div class="chart-canvas-wrapper"><canvas id="chart-cumulative"></canvas></div>
+        <div class="text-xs text-muted" id="cumulative-note" aria-live="polite"></div>
+      </div>`,
+            'timeband': `<div class="chart-container toggle-target" data-id="timeband" style="${isHidden('timeband')}">${chartHead('clock', '時間帯・曜日別の配布係数', 'timeband')}
+        <div class="chart-sub-title">時間帯別（開始時刻）</div>
+        <div class="chart-canvas-wrapper"><canvas id="chart-timeband"></canvas></div>
+        <div class="chart-sub-title">曜日別</div>
+        <div class="chart-canvas-wrapper"><canvas id="chart-dayofweek"></canvas></div>
+        <div class="text-xs text-muted">括弧内は活動回数です。回数が少ない区分は差が偶然の可能性があります。</div>
+      </div>`,
+            'duration-band': `<div class="chart-container toggle-target" data-id="duration-band" style="${isHidden('duration-band')}">${chartHead('chart', '活動時間の長さ別の効率', 'duration-band')}
+        <div class="chart-canvas-wrapper"><canvas id="chart-duration-band"></canvas></div>
+        <div class="text-xs text-muted">1回あたりの活動時間で分けています。括弧内は活動回数です。</div>
+      </div>`,
+            'revisit': `<div class="chart-container toggle-target" data-id="revisit" style="${isHidden('revisit')}">${chartHead('alert', 'ご無沙汰スポット', 'revisit')}
+        ${revisitRows.slice(0, 10).map(row => `<div class="ranking-item">
+            <div class="ranking-info">
+              <div class="ranking-name">${row.loc}</div>
+              <div class="ranking-stat">最終活動日 ${row.latestDate || '-'} ｜ ${row.count}回 ｜ 係数 ${row.avgRate}</div>
+            </div>
+            <div class="revisit-days ${row.days >= 60 ? 'critical' : row.days >= 30 ? 'caution' : ''}">
+              <span class="revisit-days-value">${row.days ?? '-'}</span><span class="revisit-days-unit">日</span>
+            </div>
+          </div>`).join('')}
+        <div class="text-xs text-muted">最終活動日からの経過日数が長い順です。</div>
+      </div>`,
             'location': `<div class="chart-container toggle-target" data-id="location" style="${isHidden('location')}">
         ${chartHead('pin', '場所別の配布枚数', 'location')}
         <div class="data-table-wrapper" style="margin-bottom:0;">
@@ -372,6 +605,18 @@ export async function render(container) {
             openImageShareDialog(button.dataset.label || '分析', shareBuilders[id]);
         }));
 
+        // 目標の入力。保存してグラフと進捗の説明だけ描き直す。
+        ['goal-target', 'goal-deadline'].forEach(id => {
+            const input = document.getElementById(id);
+            input?.addEventListener('change', () => {
+                saveGoal({
+                    target: document.getElementById('goal-target')?.value || '',
+                    deadline: document.getElementById('goal-deadline')?.value || '',
+                });
+                initCharts();
+            });
+        });
+
         // Config checkboxes
         container.querySelectorAll('.pref-cb').forEach(cb => {
             cb.addEventListener('change', (e) => {
@@ -442,6 +687,73 @@ export async function render(container) {
             const wc = document.getElementById('chart-weather');
             if (wc) { const we = Object.entries(byWeather); const wColors = { '晴': '#c08a2e', '曇': '#8a9296', '雨': '#4a7a94', '雪': '#b8c4c9', '未設定': C.faint }; const ch = new Chart(wc, { type: 'bar', data: { labels: we.map(([w]) => w), datasets: [{ label: '平均配布係数', data: we.map(([, d]) => d.rates.length > 0 ? parseFloat((d.rates.reduce((a, b) => a + b, 0) / d.rates.length).toFixed(2)) : 0), backgroundColor: we.map(([w]) => wColors[w] || '#555'), borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } } }); chartInstances.push(ch); }
         }
+        if (!hiddenCharts.includes('cumulative')) {
+            const cc = document.getElementById('chart-cumulative');
+            const view = buildGoalView(cumulative, getGoal(), today);
+            const note = document.getElementById('cumulative-note');
+            if (note) note.textContent = view.note;
+            if (cc) {
+                const datasets = [
+                    { label: '累積配布枚数', data: view.actual, borderColor: C.accent, backgroundColor: C.accentSoft, fill: true, tension: 0.2, pointRadius: 2 },
+                ];
+                if (view.pace) datasets.push({ label: '目標ペース', data: view.pace, borderColor: C.tertiary, borderDash: [6, 6], fill: false, pointRadius: 0, tension: 0 });
+                const labelOf = offset => dateFromOffset(view.start, offset);
+                const ch = new Chart(cc, {
+                    type: 'line',
+                    data: { datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                        plugins: {
+                            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } },
+                            tooltip: { callbacks: { title: items => labelOf(items[0].parsed.x) } },
+                        },
+                        scales: {
+                            x: { type: 'linear', min: 0, max: view.maxX || undefined, title: { display: true, text: '日付' }, ticks: { maxTicksLimit: 6, callback: value => labelOf(value) } },
+                            y: { beginAtZero: true, title: { display: true, text: '累積枚数' } },
+                        },
+                    },
+                });
+                chartInstances.push(ch);
+            }
+        }
+
+        if (!hiddenCharts.includes('timeband')) {
+            const bandChart = (canvas, rows) => {
+                if (!canvas || rows.length === 0) return;
+                const ch = new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels: rows.map(row => `${row.label}(${row.count}回)`),
+                        datasets: [{ label: '平均配布係数', data: rows.map(row => avgNum(row.rates)), backgroundColor: C.accent, borderRadius: 6 }],
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } },
+                });
+                chartInstances.push(ch);
+            };
+            bandChart(document.getElementById('chart-timeband'), byTimeBand);
+            bandChart(document.getElementById('chart-dayofweek'), byDayOfWeek);
+        }
+
+        if (!hiddenCharts.includes('duration-band')) {
+            const dc = document.getElementById('chart-duration-band');
+            if (dc && byDurationBand.length > 0) {
+                const ch = new Chart(dc, {
+                    type: 'bar',
+                    data: {
+                        labels: byDurationBand.map(band => `${band.label}(${band.count}回)`),
+                        datasets: [
+                            { label: '平均配布係数', data: byDurationBand.map(band => avgNum(band.rates)), backgroundColor: C.accent, borderRadius: 6, yAxisID: 'y' },
+                            { type: 'line', label: '平均配布枚数', data: byDurationBand.map(band => band.avgDist), borderColor: C.tertiary, fill: false, tension: 0.3, yAxisID: 'y1' },
+                        ],
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } }, scales: { y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: '枚/分' } }, y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: '枚' } } } },
+                });
+                chartInstances.push(ch);
+            }
+        }
+
         if (!hiddenCharts.includes('activity-map')) {
             const root = document.getElementById('activity-map-root');
             if (root) renderActivityMap(root, records);

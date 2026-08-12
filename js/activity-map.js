@@ -10,6 +10,8 @@ const METRIC_LABELS = { distribution: '総配布枚数', duration: '合計活動
 let activeMap = null;
 // 共有画像は表示中の地図と同じ集計・同じ配色で描き直すため、直近の描画内容を保持する
 let lastDraw = null;
+// 描画直後のサイズ再計算。作り直しで地図が入れ替わったら実行しない
+let resizeTimer = null;
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => (
@@ -54,6 +56,10 @@ export function renderActivityMap(container, allRecords) {
         return null;
     }
     lastDraw = null;
+    if (resizeTimer) {
+        clearTimeout(resizeTimer);
+        resizeTimer = null;
+    }
     if (activeMap) {
         try { activeMap.remove(); } catch { /* 既にDOMが破棄済み */ }
         activeMap = null;
@@ -145,7 +151,10 @@ export function renderActivityMap(container, allRecords) {
     document.getElementById('activity-map-start').addEventListener('change', redraw);
     document.getElementById('activity-map-end').addEventListener('change', redraw);
     redraw();
-    setTimeout(() => map.invalidateSize(), 0);
+    resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        if (activeMap === map) map.invalidateSize();
+    }, 0);
     return map;
 }
 

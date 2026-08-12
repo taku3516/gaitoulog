@@ -376,6 +376,9 @@ main {
 .share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s3); }
 .chart-title-actions { display: flex; align-items: center; gap: var(--s2); margin-left: auto; flex-shrink: 0; }
 .chart-title-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.chart-sub-title { margin-bottom: var(--s2); color: var(--ink-muted); font-size: var(--t-xs); font-weight: 600; }
+.chart-sub-title + .chart-canvas-wrapper { margin-bottom: var(--s4); }
+.chart-controls { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s3); }
 .share-chart-preview { display: block; width: 100%; max-height: 58vh; object-fit: contain; margin-bottom: var(--s3); border: 1px solid var(--line); background: #fff; }
 
 /* ===== 選択タグ ===== */
@@ -679,6 +682,12 @@ main {
 .ranking-rank.silver { background: var(--accent-line); color: var(--accent-hover); }
 .ranking-rank.bronze { background: var(--accent-subtle); color: var(--accent); }
 .ranking-info { flex: 1; min-width: 0; }
+/* ご無沙汰スポットの経過日数。30日・60日を超えたものだけ色で立てる */
+.revisit-days { flex-shrink: 0; text-align: right; color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
+.revisit-days-value { font-size: var(--t-md); font-weight: 700; }
+.revisit-days-unit { margin-left: 2px; font-size: var(--t-xs); color: var(--ink-muted); }
+.revisit-days.caution { color: var(--caution); }
+.revisit-days.critical { color: var(--critical); }
 .ranking-name { font-size: var(--t-sm); font-weight: 700; overflow-wrap: anywhere; }
 .ranking-stat { font-size: var(--t-xs); color: var(--ink-muted); }
 
