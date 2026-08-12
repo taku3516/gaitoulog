@@ -349,6 +349,27 @@ main {
 .timer-location { margin-top: var(--s2); color: var(--ink-secondary); font-size: var(--t-sm); font-weight: 600; }
 .timer-elapsed { margin: var(--s2) 0 var(--s3); color: var(--ink); font-size: clamp(2rem, 12vw, 3.25rem); font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; letter-spacing: .02em; }
 .timer-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+/* 活動中の枚数カウンター。歩きながら画面を見ずに押せるよう、面を大きく取る */
+.timer-counter {
+    margin-bottom: var(--s3);
+    padding: var(--s3);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-control);
+}
+.timer-counter-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.timer-counter-label { color: var(--ink-secondary); font-size: var(--t-xs); font-weight: 700; }
+.timer-counter-value {
+    margin: var(--s1) 0 var(--s2);
+    color: var(--accent);
+    font-size: clamp(2.25rem, 14vw, 3.5rem);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+}
+.timer-counter-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.timer-count-btn { min-height: 60px; font-size: var(--t-md); font-weight: 700; }
 .location-map-actions { margin: var(--s3) 0 var(--s4); }
 
 /* ===== スポット地図 ===== */

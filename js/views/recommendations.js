@@ -3,6 +3,21 @@ import * as store from '../store.js';
 import { icon } from '../utils/icons.js';
 import { todayISO } from '../calculations.js';
 import * as schedule from '../schedule.js';
+import * as spotStore from '../spot-store.js';
+
+/**
+ * 手入力の場所から、登録済みスポットの地区・地名・IDを補う。
+ * 予定から活動を始めるとき、タイマーが地区を必要とするため。
+ */
+function resolvePlace(spotName, records) {
+    const name = String(spotName || '').trim();
+    if (!name) return { area: '', locality: '', spotId: '' };
+    const master = spotStore.getAllSpots({ includeArchived: true }).find(spot => spot.spot === name);
+    if (master) return { area: master.area || '', locality: master.locality || '', spotId: master.id || '' };
+    const past = records.find(record => record.spot === name);
+    if (past) return { area: past.area || '', locality: past.locality || '', spotId: past.spotId || '' };
+    return { area: '', locality: '', spotId: '' };
+}
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => (
@@ -10,7 +25,7 @@ function esc(value) {
     ));
 }
 
-export async function render(container) {
+export async function render(container, { onStartFromPlan } = {}) {
     const today = todayISO();
     const nowH = new Date().getHours().toString().padStart(2, '0');
     const nowM = (Math.floor(new Date().getMinutes() / 15) * 15).toString().padStart(2, '0');
@@ -19,6 +34,7 @@ export async function render(container) {
     let selectedTime = `${nowH}:${nowM}`;
     const politicianId = store.getCurrentPoliticianId();
     const uniqueSpots = await store.getUniqueSpots();
+    const allRecords = await store.getAll();
 
     function planStatus(message = '') {
         const element = document.getElementById('plan-status');
@@ -39,14 +55,27 @@ export async function render(container) {
                     </div>
                     <div class="plan-body">
                         <div class="plan-spot">${esc(plan.spot || plan.area || '場所未定')}</div>
-                        <div class="plan-meta">${esc([plan.area, plan.locality].filter(Boolean).join(' ／ '))}${plan.note ? `｜${esc(plan.note)}` : ''}</div>
+                        <div class="plan-meta">${esc([...new Set([plan.area, plan.locality].filter(Boolean))].join(' ／ '))}${plan.note ? `｜${esc(plan.note)}` : ''}</div>
                     </div>
                     <div class="plan-actions">
+                        <button class="btn btn-primary btn-sm plan-start" data-id="${esc(plan.id)}">この予定で記録</button>
                         <button class="btn btn-secondary btn-sm plan-ics" data-id="${esc(plan.id)}">カレンダー</button>
                         <button class="btn btn-danger btn-sm plan-remove" data-id="${esc(plan.id)}">削除</button>
                     </div>
                 </div>`).join('');
 
+        listContainer.querySelectorAll('.plan-start').forEach(button => button.addEventListener('click', () => {
+            const plan = schedule.getPlans(politicianId).find(p => p.id === button.dataset.id);
+            if (!plan) return;
+            const place = plan.area ? plan : { ...plan, ...resolvePlace(plan.spot, allRecords) };
+            onStartFromPlan?.({
+                area: place.area,
+                locality: place.locality,
+                spot: place.spot,
+                spotId: place.spotId,
+                startTime: plan.time || '',
+            });
+        }));
         listContainer.querySelectorAll('.plan-ics').forEach(button => button.addEventListener('click', () => {
             const plan = schedule.getPlans(politicianId).find(p => p.id === button.dataset.id);
             if (!plan) return;
@@ -138,7 +167,7 @@ export async function render(container) {
     container.innerHTML = `
         <div>
             <h2 class="section-title">${icon('calendar', { size: 19 })}活動予定</h2>
-            <p class="section-note">予定の1時間前と開始時刻に、アプリを開いている間はお知らせします。アプリを閉じていても通知を受け取りたいときは「カレンダー」から端末のカレンダーへ登録してください。</p>
+            <p class="section-note">予定の1時間前と開始時刻に、アプリを開いている間はお知らせします。アプリを閉じていても通知を受け取りたいときは「カレンダー」から端末のカレンダーへ登録してください。当日は「この予定で記録」から、場所が入った入力画面へ進めます。</p>
 
             <div class="card">
                 <div id="plan-list" class="plan-list"></div>
@@ -209,7 +238,7 @@ export async function render(container) {
                 politicianId,
                 date: document.getElementById('plan-date').value,
                 time: document.getElementById('plan-time').value,
-                area: '',
+                ...resolvePlace(spot, allRecords),
                 spot,
                 note: document.getElementById('plan-note').value.trim(),
             });

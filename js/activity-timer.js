@@ -35,7 +35,38 @@ export function startTimer({ politicianId, spotId = '', area, locality = '', spo
         startedAt,
         endedAt: null,
         status: 'running',
+        count: 0,
+        // 押し間違いを1回分だけ戻せるように、加算の履歴を残す
+        steps: [],
     });
+}
+
+export function getCount(timer = read()) {
+    return Number(timer?.count) || 0;
+}
+
+/** 配布枚数を数える。マイナスにはしない。 */
+export function addCount(delta) {
+    const timer = read();
+    if (!timer) return null;
+    const step = Number(delta) || 0;
+    const next = Math.max(0, getCount(timer) + step);
+    const applied = next - getCount(timer);
+    return write({
+        ...timer,
+        count: next,
+        steps: applied === 0 ? (timer.steps || []) : [...(timer.steps || []), applied].slice(-50),
+    });
+}
+
+/** 直前の加算を取り消す。 */
+export function undoCount() {
+    const timer = read();
+    if (!timer) return null;
+    const steps = [...(timer.steps || [])];
+    const last = steps.pop();
+    if (last === undefined) return timer;
+    return write({ ...timer, count: Math.max(0, getCount(timer) - last), steps });
 }
 
 export function finishTimer() {

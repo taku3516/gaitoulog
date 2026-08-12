@@ -73,6 +73,40 @@ function showToast(message, type = 'success') {
     setTimeout(() => { toast.className = 'toast'; }, 2500);
 }
 
+/**
+ * 初回起動時に、サンプルデータを入れるかを選んでもらう。
+ * 以前は自動で入れていたが、サンプルが実績の集計や共有画像に混ざるため選択制にした。
+ */
+async function setUpFirstRun() {
+    if (!await store.needsFirstRunSetup()) return;
+
+    const choice = await new Promise(resolve => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `<div class="modal-sheet">
+            <div class="modal-head"><div>
+              <div class="modal-title">はじめまして</div>
+              <div class="modal-sub">街頭活動ログの使い方を試せるサンプルを用意しています。</div>
+            </div></div>
+            <p class="text-sm" style="margin:0 0 var(--s4);line-height:1.9;">
+              サンプルは品川区の架空の活動記録10件です。集計やグラフの見え方を確かめられます。
+              あとから設定画面でまとめて削除できます。
+            </p>
+            <div class="modal-actions">
+              <button class="btn btn-primary" id="first-run-sample">サンプルを入れて試す</button>
+              <button class="btn btn-secondary" id="first-run-empty">空で始める</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        const pick = value => { modal.remove(); resolve(value); };
+        modal.querySelector('#first-run-sample').addEventListener('click', () => pick('sample'));
+        modal.querySelector('#first-run-empty').addEventListener('click', () => pick('empty'));
+    });
+
+    if (choice === 'sample') await store.seedSampleRecords(generateDummyData());
+    else store.markFirstRunDone();
+}
+
 let isSwitching = false;
 
 async function switchView(view, editId = null) {
@@ -110,7 +144,13 @@ async function switchView(view, editId = null) {
                 });
                 break;
             case 'recommend':
-                await recommendView.render(mainContent);
+                await recommendView.render(mainContent, {
+                    // 予定→実施→記録をつなぐ。場所と開始時刻を入力画面へ渡す。
+                    onStartFromPlan: (place) => {
+                        inputForm.setTemplateFrom({ ...place, endTime: '' });
+                        switchView('input');
+                    },
+                });
                 break;
             case 'dashboard':
                 await dashboard.render(mainContent);
@@ -140,7 +180,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click
 // 初期化フロー
 (async function initApp() {
     try {
-        await store.initIfEmpty(generateDummyData());
+        await setUpFirstRun();
         await switchView('input');
 
         setUpReminders();

@@ -358,41 +358,66 @@ export async function clearAllForCurrentPolitician() {
 
 const INIT_FLAG_KEY = 'streetActivityLogs_initialized_v2';
 
-export async function initIfEmpty(dummyRecords) {
+/**
+ * 初回起動かどうかを調べ、必要なら初期化済みの印だけ付ける。
+ * サンプルデータを入れるかは利用者に選んでもらうため、ここでは投入しない。
+ * @returns {Promise<boolean>} まだ何も記録が無い初回起動なら true
+ */
+export async function needsFirstRunSetup() {
     await migrateFromLocalStorage();
-    
-    const alreadyInitialized = localStorage.getItem(INIT_FLAG_KEY);
-    if (alreadyInitialized) return;
+    if (localStorage.getItem(INIT_FLAG_KEY)) return false;
 
     const db = await initDB();
-    return new Promise((resolve, reject) => {
+    const count = await new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.count();
-        req.onsuccess = () => {
-            if (req.result === 0) {
-                const enriched = dummyRecords.map(r => enrichRecord({
-                    ...r,
-                    id: generateId() + Math.random().toString(36).substr(2, 4),
-                    politicianId: 'default',
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                }));
-                const writeTx = db.transaction(STORE_NAME, 'readwrite');
-                const writeStore = writeTx.objectStore(STORE_NAME);
-                enriched.forEach(r => writeStore.put(r));
-                writeTx.oncomplete = () => {
-                    localStorage.setItem(INIT_FLAG_KEY, 'true');
-                    resolve();
-                };
-                writeTx.onerror = () => reject(writeTx.error);
-            } else {
-                localStorage.setItem(INIT_FLAG_KEY, 'true');
-                resolve();
-            }
-        };
-        req.onerror = () => reject(req.error);
+        const request = tx.objectStore(STORE_NAME).count();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
     });
+    if (count > 0) {
+        localStorage.setItem(INIT_FLAG_KEY, 'true');
+        return false;
+    }
+    return true;
+}
+
+export function markFirstRunDone() {
+    localStorage.setItem(INIT_FLAG_KEY, 'true');
+}
+
+/** 試用のためのサンプル記録を入れる。後でまとめて消せるよう印を付ける。 */
+export async function seedSampleRecords(sampleRecords) {
+    const db = await initDB();
+    const enriched = sampleRecords.map(record => enrichRecord({
+        ...record,
+        id: generateId() + Math.random().toString(36).slice(2, 6),
+        politicianId: 'default',
+        isSample: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+    }));
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const objectStore = tx.objectStore(STORE_NAME);
+        enriched.forEach(record => objectStore.put(record));
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+    markFirstRunDone();
+    return enriched.length;
+}
+
+export async function countSampleRecords() {
+    const all = await getAllRaw();
+    return all.filter(record => record.isSample).length;
+}
+
+export async function removeSampleRecords() {
+    const all = await getAllRaw();
+    const ids = all.filter(record => record.isSample).map(record => record.id);
+    if (ids.length === 0) return 0;
+    await bulkRemove(ids);
+    return ids.length;
 }
 
 export async function getRecentLocations(limit = 5) {

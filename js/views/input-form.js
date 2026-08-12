@@ -102,7 +102,7 @@ export async function render(container, { onSaved }) {
     container.innerHTML = `
     <div>
       <h2 class="section-title">${icon('edit', { size: 19 })}${isEdit ? '記録を編集' : '新しい記録'}</h2>
-      ${duplicated ? '<p class="section-note">前の記録から場所と段取りを引き継ぎました。日付と実績を確認して保存してください。</p>' : ''}
+      ${duplicated ? '<p class="section-note">場所と段取りを引き継いで入力欄を埋めました。このまま「活動を開始」でタイマーも使えます。</p>' : ''}
       <form id="activity-form" novalidate>
         ${isEdit ? '' : renderTimerCard(activeTimer, ownTimer)}
         ${isEdit ? '' : `
@@ -173,7 +173,7 @@ export async function render(container, { onSaved }) {
 
           <div class="form-group">
             <label class="form-label">配布枚数<span class="required">*</span></label>
-            <input type="number" class="form-input" id="f-distributionCount" inputmode="numeric" min="0" value="${record?.distributionCount ?? ''}" placeholder="0" />
+            <input type="number" class="form-input" id="f-distributionCount" inputmode="numeric" min="0" value="${record?.distributionCount ?? (activityTimer.getCount(ownTimer) || '')}" placeholder="0" />
             <div class="form-error" id="err-distributionCount"></div>
           </div>
 
@@ -377,12 +377,27 @@ function renderTimerCard(activeTimer, ownTimer) {
         </div>`;
     }
     const ended = ownTimer.status === 'ended';
+    const count = activityTimer.getCount(ownTimer);
+    // 活動中は配布枚数をその場で数えられるようにする（後から思い出して入れると精度が落ちるため）
+    const counter = ended ? '' : `
+      <div class="timer-counter">
+        <div class="timer-counter-head">
+          <span class="timer-counter-label">配布枚数</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-count-undo" ${(ownTimer.steps || []).length === 0 ? 'disabled' : ''}>1つ戻す</button>
+        </div>
+        <div class="timer-counter-value" id="timer-count" aria-live="polite">${count}</div>
+        <div class="timer-counter-buttons">
+          <button type="button" class="btn btn-primary timer-count-btn" data-delta="1">＋1</button>
+          <button type="button" class="btn btn-primary timer-count-btn" data-delta="10">＋10</button>
+        </div>
+      </div>`;
     return `<div class="card timer-card ${ended ? 'is-ended' : 'is-running'}">
       <div class="timer-status-label">${ended ? '終了済み・保存待ち' : '活動中'}</div>
       <div class="timer-location">${escapeHtml(ownTimer.area)} ／ ${escapeHtml(ownTimer.spot)}</div>
       <div class="timer-elapsed" id="timer-elapsed">${activityTimer.formatElapsed(activityTimer.elapsedMilliseconds(ownTimer))}</div>
+      ${counter}
       <div class="timer-actions">
-        ${ended ? '<span class="text-sm text-muted">実績を入力して保存してください。</span>' : `<button type="button" class="btn btn-primary" id="btn-timer-finish">活動を終了</button>`}
+        ${ended ? `<span class="text-sm text-muted">${count > 0 ? `数えた${count}枚を配布枚数に入れました。確認して保存してください。` : '実績を入力して保存してください。'}</span>` : `<button type="button" class="btn btn-primary" id="btn-timer-finish">活動を終了</button>`}
         <button type="button" class="btn btn-secondary btn-sm" id="btn-timer-cancel">${ended ? '計測を破棄' : '中止'}</button>
       </div>
     </div>`;
@@ -419,6 +434,24 @@ function attachTimerHandlers(container, ownTimer, onSaved) {
             error.textContent = timerError.message;
             error.classList.add('visible');
         }
+    });
+
+    // カウンターは画面を作り直さず、数字と入力欄だけ更新する（タップの反応を優先）
+    function refreshCount(timer) {
+        if (!timer) return;
+        const display = document.getElementById('timer-count');
+        if (display) display.textContent = activityTimer.getCount(timer);
+        const undoButton = document.getElementById('btn-count-undo');
+        if (undoButton) undoButton.disabled = (timer.steps || []).length === 0;
+        const field = document.getElementById('f-distributionCount');
+        if (field) field.value = activityTimer.getCount(timer);
+    }
+
+    container.querySelectorAll('.timer-count-btn').forEach(button => button.addEventListener('click', () => {
+        refreshCount(activityTimer.addCount(Number(button.dataset.delta)));
+    }));
+    document.getElementById('btn-count-undo')?.addEventListener('click', () => {
+        refreshCount(activityTimer.undoCount());
     });
 
     document.getElementById('btn-timer-finish')?.addEventListener('click', async () => {

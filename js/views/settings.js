@@ -11,6 +11,7 @@ let unsubscribe = null;
 let rememberDevice = false;
 let accountRows = [];
 let customSpotRows = [];
+let sampleCount = 0;
 
 function escapeHtml(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => (
@@ -41,6 +42,7 @@ async function loadAccounts() {
         isCurrent: p.id === currentId,
     }));
     customSpotRows = spotStore.getCustomSpots({ includeArchived: true });
+    sampleCount = await store.countSampleRecords();
 }
 
 export async function render(container, { onAccountsChanged } = {}) {
@@ -103,6 +105,28 @@ export async function render(container, { onAccountsChanged } = {}) {
           <button class="btn btn-primary btn-full" id="spot-map-manage" style="margin-bottom:12px;">地図でピンを追加・編集</button>
           <div class="account-list">${rows}</div>
         </div>`;
+    }
+
+    function sampleSection() {
+        if (sampleCount === 0) return '';
+        return `<div class="card">
+          <div class="card-title">${icon('alert')}サンプルデータ</div>
+          <p class="text-xs text-muted" style="margin:10px 0 12px;line-height:1.8;">
+            お試し用のサンプル記録が${sampleCount}件あります。実際の活動を記録し始めたら削除してください。
+            集計やグラフ、共有する画像にもサンプルが混ざります。
+          </p>
+          <button class="btn btn-danger btn-full" id="sample-delete">サンプル${sampleCount}件を削除</button>
+        </div>`;
+    }
+
+    function attachSampleHandlers() {
+        document.getElementById('sample-delete')?.addEventListener('click', async () => {
+            if (!confirm(`サンプル記録${sampleCount}件を削除します。ご自身で入力した記録は残ります。よろしいですか？`)) return;
+            const removed = await store.removeSampleRecords();
+            await loadAccounts();
+            if (document.getElementById('settings-root')) renderBody();
+            alert(`サンプル${removed}件を削除しました。`);
+        });
     }
 
     function attachBackupHandlers() {
@@ -243,6 +267,7 @@ export async function render(container, { onAccountsChanged } = {}) {
         container.innerHTML = `
             <div id="settings-root">
                 <h2 class="section-title">${icon('settings', { size: 19 })}設定</h2>
+                ${sampleSection()}
                 ${accountsSection()}
                 ${spotsSection()}
                 ${backupSection(Boolean(state.user))}
@@ -253,6 +278,7 @@ export async function render(container, { onAccountsChanged } = {}) {
     }
 
     function attachHandlers() {
+        attachSampleHandlers();
         attachBackupHandlers();
         document.querySelectorAll('.account-delete').forEach(btn => {
             btn.addEventListener('click', () => handleDeleteAccount(btn.dataset.id));
