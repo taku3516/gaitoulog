@@ -51,12 +51,14 @@ await expectDenied('文字数超過(locality)は拒否', setDoc(doc(A,'users/use
 
 const validSpot = (id='spot1', o={}) => ({
   id, schemaVersion: 1, syncedAt: serverTimestamp(), area: '大井', locality: '大井',
-  spot: 'テスト地点', lat: 35.606, lng: 139.734, source: 'custom', archived: false, ...o,
+  spot: 'テスト地点', lat: 35.606, lng: 139.734, source: 'custom', archived: false,
+  deleted: false, baselineVersion: '2026-08-13', ...o,
 });
 await expectOk('本人は追加スポットを書ける', setDoc(doc(A,'users/userA/spots/spot1'), validSpot()));
 await expectOk('本人は追加スポットを読める', getDoc(doc(A,'users/userA/spots/spot1')));
 await expectOk('本人はピン位置と名称を更新できる', setDoc(doc(A,'users/userA/spots/spot1'), validSpot('spot1',{ spot: '移動後の地点', lat: 35.607, lng: 139.735 })));
 await expectOk('標準ピンの上書きを同じIDで保存できる', setDoc(doc(A,'users/userA/spots/preset_abc123'), validSpot('preset_abc123',{ spot: '標準ピン変更' })));
+await expectOk('標準ピンの削除印を保存できる', setDoc(doc(A,'users/userA/spots/preset_deleted'), validSpot('preset_deleted',{ deleted: true })));
 await expectDenied('他人の追加スポットへ書けない', setDoc(doc(B,'users/userA/spots/spot2'), validSpot('spot2')));
 await expectDenied('範囲外の緯度は拒否', setDoc(doc(A,'users/userA/spots/spot3'), validSpot('spot3',{ lat: 91 })));
 await expectDenied('標準スポットをクラウドへ書けない', setDoc(doc(A,'users/userA/spots/spot4'), validSpot('spot4',{ source: 'preset' })));

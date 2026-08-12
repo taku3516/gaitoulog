@@ -93,6 +93,7 @@ export async function render(container, { onAccountsChanged } = {}) {
                 <div class="spot-row-actions">
                   <button class="btn btn-secondary btn-sm spot-edit" data-id="${escapeHtml(spot.id)}">編集</button>
                   <button class="btn btn-secondary btn-sm spot-archive" data-id="${escapeHtml(spot.id)}" data-archived="${spot.archived}">${spot.archived ? '再表示' : '非表示'}</button>
+                  <button class="btn btn-danger btn-sm spot-delete" data-id="${escapeHtml(spot.id)}">削除</button>
                 </div>
             </div>`).join('') : '<p class="text-sm text-muted" style="margin:10px 0 0;">追加・変更したスポットはまだありません。</p>';
         return `<div class="card">
@@ -192,6 +193,17 @@ export async function render(container, { onAccountsChanged } = {}) {
         document.querySelectorAll('.spot-archive').forEach(btn => {
             btn.addEventListener('click', async () => {
                 spotStore.archiveCustomSpot(btn.dataset.id, btn.dataset.archived !== 'true');
+                await loadAccounts();
+                if (document.getElementById('settings-root')) renderBody();
+            });
+        });
+        document.querySelectorAll('.spot-delete').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const target = customSpotRows.find(spot => spot.id === btn.dataset.id);
+                if (!target) return;
+                const message = `「${target.spot}」のピンを削除します。\n活動記録は削除されません。\nこの操作は取り消せません。続行しますか？`;
+                if (!confirm(message)) return;
+                spotStore.deleteSpot(target.id);
                 await loadAccounts();
                 if (document.getElementById('settings-root')) renderBody();
             });

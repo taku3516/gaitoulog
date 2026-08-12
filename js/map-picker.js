@@ -113,6 +113,7 @@ export function openMapPicker({ onSelect, onSaved, manage = false, initialSpotId
             <div class="form-group"><label class="form-label">スポット名</label><input class="form-input" id="map-name" maxlength="100" required placeholder="例：駅東口" value="${escapeHtml(existing?.spot || '')}"></div>
             <button class="btn btn-primary btn-full" type="submit">${editing ? '変更を保存' : 'このピンを保存'}</button>
             ${existing?.isPresetOverride ? '<button class="btn btn-secondary btn-full" type="button" id="map-reset" style="margin-top:8px;">標準の名称・位置に戻す</button>' : ''}
+            ${editing ? '<button class="btn btn-danger btn-full" type="button" id="map-delete" style="margin-top:8px;">このピンを削除</button>' : ''}
           </form>`;
         draftMarker.off('dragend');
         draftMarker.on('dragend', () => document.getElementById('map-status').textContent = 'ピン位置を更新しました。');
@@ -152,6 +153,21 @@ export function openMapPicker({ onSelect, onSaved, manage = false, initialSpotId
             chooseSpot(reset);
             map.setView([reset.lat, reset.lng], Math.max(map.getZoom(), 16));
             document.getElementById('map-status').textContent = '標準の名称・位置に戻しました。';
+        });
+        document.getElementById('map-delete')?.addEventListener('click', () => {
+            const message = `「${existing.spot}」のピンを削除します。\n活動記録は削除されません。\nこの操作は取り消せません。続行しますか？`;
+            if (!confirm(message)) return;
+            if (!spotStore.deleteSpot(existing.id)) {
+                document.getElementById('map-status').textContent = 'ピンを削除できませんでした。';
+                return;
+            }
+            draftMarker.remove();
+            draftMarker = null;
+            addMode = false;
+            renderMarkers();
+            onSaved?.(null);
+            panel.innerHTML = '<div class="map-selection-card"><div class="map-selection-name">ピンを削除しました。</div><p class="section-note">活動記録は残っています。</p></div>';
+            document.getElementById('map-status').textContent = 'ピンを削除しました。';
         });
     }
 

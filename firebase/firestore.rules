@@ -97,7 +97,8 @@ service cloud.firestore {
         let d = request.resource.data;
         return d.keys().hasOnly([
             'id', 'schemaVersion', 'syncedAt', 'createdAt', 'updatedAt',
-            'area', 'locality', 'spot', 'lat', 'lng', 'source', 'archived'
+            'area', 'locality', 'spot', 'lat', 'lng', 'source', 'archived',
+            'deleted', 'baselineVersion'
           ])
           && d.schemaVersion == 1
           && d.syncedAt == request.time
@@ -109,6 +110,8 @@ service cloud.firestore {
           && d.lng is number && d.lng >= -180 && d.lng <= 180
           && d.source == 'custom'
           && d.archived is bool
+          && d.deleted is bool
+          && okStr(d, 'baselineVersion', 20)
           && okStr(d, 'createdAt', 30) && okStr(d, 'updatedAt', 30);
       }
 
