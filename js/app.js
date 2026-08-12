@@ -7,6 +7,7 @@ import * as recommendView from './views/recommendations.js';
 import * as dashboard from './views/dashboard.js';
 import * as settingsView from './views/settings.js';
 import * as syncBridge from './sync/bridge.js';
+import * as schedule from './schedule.js';
 import { icon } from './utils/icons.js';
 
 // ナビゲーションとタイトルのアイコンを描画する
@@ -52,8 +53,18 @@ polSelect.addEventListener('change', async (e) => {
         return;
     }
     store.setCurrentPoliticianId(e.target.value);
+    setUpReminders();
     await switchView(currentView); // 画面再描画
 });
+
+// 予定のリマインド。アプリを開いている間だけ動く（端末を閉じている間は動かない）。
+schedule.setRemindHandler(({ body }) => {
+    if (!schedule.showNotification('街頭活動の予定', body)) showToast(body);
+});
+
+function setUpReminders() {
+    schedule.startReminders(store.getCurrentPoliticianId());
+}
 
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
@@ -90,7 +101,13 @@ async function switchView(view, editId = null) {
                 });
                 break;
             case 'list':
-                await listView.render(mainContent, { onEdit: (id) => switchView('input', id) });
+                await listView.render(mainContent, {
+                    onEdit: (id) => switchView('input', id),
+                    onDuplicate: (record) => {
+                        inputForm.setTemplateFrom(record);
+                        switchView('input');
+                    },
+                });
                 break;
             case 'recommend':
                 await recommendView.render(mainContent);
@@ -125,6 +142,13 @@ document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click
     try {
         await store.initIfEmpty(generateDummyData());
         await switchView('input');
+
+        setUpReminders();
+        const todaysPlans = schedule.getTodaysPlans(store.getCurrentPoliticianId());
+        if (todaysPlans.length > 0) {
+            const first = todaysPlans[0];
+            showToast(`今日の予定 ${todaysPlans.length}件（${first.time || '時刻未定'} ${first.spot || first.area}）`);
+        }
 
         // クラウド由来でデータが入れ替わったら、アカウント一覧と表示中の画面を作り直す
         syncBridge.onCloudStateApplied(async () => {

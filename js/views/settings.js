@@ -5,6 +5,7 @@ import { icon } from '../utils/icons.js';
 import * as store from '../store.js';
 import * as spotStore from '../spot-store.js';
 import { openMapPicker } from '../map-picker.js';
+import { downloadBackup, readBackupFile, inspectBackup, restoreBackup } from '../utils/backup.js';
 
 let unsubscribe = null;
 let rememberDevice = false;
@@ -104,6 +105,70 @@ export async function render(container, { onAccountsChanged } = {}) {
         </div>`;
     }
 
+    function attachBackupHandlers() {
+        const status = message => {
+            const element = document.getElementById('backup-status');
+            if (element) element.textContent = message;
+        };
+
+        document.getElementById('backup-export')?.addEventListener('click', async () => {
+            try {
+                const backup = await downloadBackup();
+                status(`${backup.records.length}件の記録を書き出しました。`);
+            } catch (error) {
+                status(`書き出しに失敗しました：${error.message}`);
+            }
+        });
+
+        const fileInput = document.getElementById('backup-file-input');
+        document.getElementById('backup-import')?.addEventListener('click', () => {
+            if (!fileInput) return;
+            fileInput.value = '';
+            fileInput.click();
+        });
+        fileInput?.addEventListener('change', async event => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            try {
+                const backup = await readBackupFile(file);
+                const info = inspectBackup(backup);
+                const when = info.exportedAt ? new Date(info.exportedAt).toLocaleString('ja-JP') : '不明';
+                const message = `このバックアップで端末のデータを置き換えます。\n\n`
+                    + `作成日時：${when}\n`
+                    + `活動記録：${info.recordCount}件\n`
+                    + `アカウント：${info.politicianCount}件\n`
+                    + `追加スポット：${info.spotCount}件\n\n`
+                    + '現在この端末にある記録・アカウント・スポットは失われます。続行しますか？';
+                if (!confirm(message)) return;
+                const result = await restoreBackup(backup);
+                alert(`${result.recordCount}件の記録を復元しました。画面を読み込み直します。`);
+                location.reload();
+            } catch (error) {
+                status(`復元できませんでした：${error.message}`);
+            }
+        });
+    }
+
+    function backupSection(signedIn) {
+        return `<div class="card">
+          <div class="card-title">${icon('download')}バックアップ</div>
+          <p class="text-xs text-muted" style="margin:10px 0 12px;line-height:1.8;">
+            すべてのアカウントの活動記録、追加スポット、表示設定、配布目標を1つのファイルに書き出します。
+            機種変更や端末の紛失に備えた控えとして保存してください。CSVの出力は活動記録だけが対象です。
+          </p>
+          <div class="backup-actions">
+            <button class="btn btn-primary" id="backup-export">${icon('download', { size: 15 })}バックアップを保存</button>
+            <button class="btn btn-secondary" id="backup-import">${icon('upload', { size: 15 })}バックアップから復元</button>
+          </div>
+          <input type="file" id="backup-file-input" accept="application/json,.json" style="display:none;" />
+          <p class="text-xs" style="margin:12px 0 0;line-height:1.8;color:var(--critical);">
+            復元すると、この端末の記録・アカウント・スポットはバックアップの内容に置き換わります。復元前の内容は戻せません。
+            ${signedIn ? '<br>同期にログイン中の復元はこの端末だけに反映され、クラウドの内容で上書きされることがあります。復元する前にログアウトしてください。' : ''}
+          </p>
+          <div class="text-xs" id="backup-status" aria-live="polite" style="margin-top:8px;"></div>
+        </div>`;
+    }
+
     function renderBody() {
         const api = cloud();
         const state = api ? api.getState() : { available: false, status: 'idle', message: '', user: null, busy: false };
@@ -180,6 +245,7 @@ export async function render(container, { onAccountsChanged } = {}) {
                 <h2 class="section-title">${icon('settings', { size: 19 })}設定</h2>
                 ${accountsSection()}
                 ${spotsSection()}
+                ${backupSection(Boolean(state.user))}
                 ${syncSection}
             </div>
         `;
@@ -187,6 +253,7 @@ export async function render(container, { onAccountsChanged } = {}) {
     }
 
     function attachHandlers() {
+        attachBackupHandlers();
         document.querySelectorAll('.account-delete').forEach(btn => {
             btn.addEventListener('click', () => handleDeleteAccount(btn.dataset.id));
         });

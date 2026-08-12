@@ -10,6 +10,7 @@ import {
     createTableImage,
     createRankingImage,
 } from '../share-report.js';
+import { openReportDialog } from '../report.js';
 
 const Chart = window.Chart;
 
@@ -563,7 +564,7 @@ export async function render(container) {
     <div>
       <div class="list-toolbar" style="margin-bottom: var(--s2);">
         <h2 class="section-title" style="margin:0;">${icon('chart', { size: 19 })}分析</h2>
-        <div class="list-toolbar-actions"><button id="btn-share-dashboard" class="btn btn-primary btn-sm">${icon('upload', { size: 15 })}共有</button><button id="btn-prefs" class="btn btn-secondary btn-sm">${icon('settings', { size: 15 })}表示設定</button></div>
+        <div class="list-toolbar-actions"><button id="btn-report" class="btn btn-secondary btn-sm">${icon('note', { size: 15 })}レポート</button><button id="btn-share-dashboard" class="btn btn-primary btn-sm">${icon('upload', { size: 15 })}共有</button><button id="btn-prefs" class="btn btn-secondary btn-sm">${icon('settings', { size: 15 })}表示設定</button></div>
       </div>
       <div class="stat-chip" style="margin-bottom:var(--s4);">
            ${icon('user')}${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
@@ -600,6 +601,7 @@ export async function render(container) {
             panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
         });
         document.getElementById('btn-share-dashboard').addEventListener('click', () => openShareDialog(records));
+        document.getElementById('btn-report').addEventListener('click', () => openReportDialog(records));
         container.querySelectorAll('.chart-share').forEach(button => button.addEventListener('click', () => {
             const id = button.dataset.share;
             openImageShareDialog(button.dataset.label || '分析', shareBuilders[id]);

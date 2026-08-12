@@ -38,9 +38,20 @@ function detailRows(record) {
     return rows;
 }
 
-export async function render(container, { onEdit }) {
+/** 検索対象にする文字列をまとめる。数値や真偽値は検索語にしにくいので除く。 */
+function searchIndex(record) {
+    return [
+        record.date, record.dayOfWeek, record.startTime, record.endTime,
+        record.area, record.locality, record.spot, record.address,
+        record.weather, record.formType, record.micType, record.groupType,
+        record.volunteerNames, record.memo, record.troubleNote,
+        ...(record.themes || []), ...(record.materials || []),
+    ].filter(Boolean).join(' ').toLowerCase();
+}
+
+export async function render(container, { onEdit, onDuplicate }) {
     const areas = await store.getUniqueAreas();
-    let filterPeriod = 'all', sortBy = 'date-desc', customStart = '', customEnd = '';
+    let filterPeriod = 'all', sortBy = 'date-desc', customStart = '', customEnd = '', keyword = '';
 
     // 3-1. 複数選択用配列
     let selectedAreas = [];
@@ -72,6 +83,15 @@ export async function render(container, { onEdit }) {
 
         if (selectedAreas.length > 0) filtered = filtered.filter(r => selectedAreas.includes(r.area));
         if (selectedWeathers.length > 0) filtered = filtered.filter(r => selectedWeathers.includes(r.weather));
+
+        // 空白区切りの語をすべて含む記録に絞る
+        const words = keyword.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length > 0) {
+            filtered = filtered.filter(record => {
+                const target = searchIndex(record);
+                return words.every(word => target.includes(word));
+            });
+        }
 
         switch (sortBy) {
             case 'date-desc': filtered.sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)); break;
@@ -115,7 +135,7 @@ export async function render(container, { onEdit }) {
 
         // 3-2. 一括削除UI
         document.getElementById('list-results').innerHTML = filtered.length === 0 ? `
-      <div class="empty-state"><div class="empty-state-icon">${icon('list', { size: 32 })}</div><div class="empty-state-text">記録がありません</div></div>
+      <div class="empty-state"><div class="empty-state-icon">${icon('list', { size: 32 })}</div><div class="empty-state-text">${keyword.trim() ? `「${esc(keyword.trim())}」に一致する記録がありません` : '記録がありません'}</div></div>
     ` : filtered.map(r => `
       <div class="list-card">
         <div class="list-card-select">
@@ -201,14 +221,17 @@ export async function render(container, { onEdit }) {
                 ${record.memo ? `<div style="margin-bottom:var(--s4);"><span class="detail-label">メモ</span><p class="text-sm" style="margin:4px 0 0; white-space:pre-wrap;">${esc(record.memo)}</p></div>` : ''}
                 <div class="modal-actions">
                     <button id="modal-edit" class="btn btn-primary">${icon('edit', { size: 16 })}編集する</button>
+                    <button id="modal-duplicate" class="btn btn-secondary">${icon('save', { size: 16 })}複製して入力</button>
                     <button id="modal-delete" class="btn btn-danger">${icon('trash', { size: 16 })}削除</button>
                 </div>
+                <p class="section-note" style="margin:var(--s2) 0 0;">複製では場所・時間帯・実施形態・テーマなどを引き継ぎ、日付は当日、配布枚数などの実績は空にします。</p>
             </div>
         `;
 
         modal.querySelector('#close-modal').addEventListener('click', () => modal.style.display = 'none');
         modal.addEventListener('click', (e) => { if(e.target === modal) modal.style.display = 'none'; });
         modal.querySelector('#modal-edit').addEventListener('click', () => { modal.style.display = 'none'; onEdit(record.id); });
+        modal.querySelector('#modal-duplicate').addEventListener('click', () => { modal.style.display = 'none'; onDuplicate?.(record); });
         modal.querySelector('#modal-delete').addEventListener('click', async () => {
             if(confirm('この記録を削除しますか？')) {
                 await store.remove(record.id);
@@ -238,6 +261,11 @@ export async function render(container, { onEdit }) {
       <div class="list-toolbar" style="margin-bottom: var(--s4);">
         <h2 class="section-title" style="margin:0;">${icon('list', { size: 19 })}活動一覧</h2>
         <span class="stat-chip">${icon('user')}${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}</span>
+      </div>
+
+      <div class="search-bar">
+        <input type="search" class="form-input" id="filter-keyword" placeholder="スポット・メモ・テーマなどで検索" aria-label="検索" />
+        <button class="btn btn-secondary btn-sm" id="filter-keyword-clear" type="button">消す</button>
       </div>
 
       <div class="filter-bar">
@@ -272,6 +300,15 @@ export async function render(container, { onEdit }) {
       <div id="list-results"></div>
     </div>
   `;
+
+    const keywordInput = document.getElementById('filter-keyword');
+    keywordInput.addEventListener('input', () => { keyword = keywordInput.value; renderList(); });
+    document.getElementById('filter-keyword-clear').addEventListener('click', () => {
+        keywordInput.value = '';
+        keyword = '';
+        renderList();
+        keywordInput.focus();
+    });
 
     document.getElementById('filter-period').addEventListener('change', (e) => { filterPeriod = e.target.value; document.getElementById('custom-range').style.display = filterPeriod === 'custom' ? 'block' : 'none'; renderList(); });
     document.getElementById('filter-sort').addEventListener('change', (e) => { sortBy = e.target.value; renderList(); });
