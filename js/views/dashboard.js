@@ -1,8 +1,14 @@
 // ===== ダッシュボード =====
 import * as store from '../store.js';
 import { icon } from '../utils/icons.js';
-import { renderActivityMap } from '../activity-map.js';
-import { openShareDialog, openChartShareDialog } from '../share-report.js';
+import { renderActivityMap, createActivityMapImage } from '../activity-map.js';
+import {
+    openShareDialog,
+    openImageShareDialog,
+    createChartImage,
+    createTableImage,
+    createRankingImage,
+} from '../share-report.js';
 
 const Chart = window.Chart;
 
@@ -47,6 +53,25 @@ const CHART_CONFIGS = [
     { id: 'activity-map', title: '活動量マップ' },
 ];
 
+const DRAG_HANDLE = `<div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div>`;
+
+// 全ダッシュボード共通の見出し。すべてのブロックに画像共有ボタンを置く。
+function chartHead(iconName, label, shareId) {
+    return `<div class="chart-title">
+        <div class="chart-title-label">${icon(iconName)}${label}</div>
+        <div class="chart-title-actions">
+          <button class="btn btn-secondary btn-sm chart-share" data-share="${shareId}" data-label="${label}" title="${label}を画像で共有">画像共有</button>
+          ${DRAG_HANDLE}
+        </div>
+      </div>`;
+}
+
+// ヒートマップの濃度段階。表示と共有画像で同じ基準を使う。
+function heatStep(value) {
+    const rate = parseFloat(value);
+    return rate >= 3.0 ? 4 : rate >= 2.0 ? 3 : rate >= 1.0 ? 2 : rate >= 0.5 ? 1 : 0;
+}
+
 export async function render(container) {
     destroyCharts();
     const records = await store.getAll();
@@ -78,6 +103,9 @@ export async function render(container) {
         if (r.distributionRate != null) byMonth[m].rates.push(r.distributionRate);
     });
     const monthKeys = Object.keys(byMonth).sort();
+    const periodSubtitle = monthKeys.length
+        ? `期間：${monthKeys[0] === monthKeys.at(-1) ? monthKeys[0] : `${monthKeys[0]} 〜 ${monthKeys.at(-1)}`}　｜　活動${totalCount}回・${totalDist.toLocaleString()}枚`
+        : '';
 
     const byLocation = {};
     records.forEach(r => {
@@ -142,14 +170,114 @@ export async function render(container) {
 
         const sortIcon = (key) => sortConfig.key === key ? (sortConfig.order === 'desc' ? ' ↓' : ' ↑') : '';
 
+        // 各ダッシュボードの共有画像。表示中の並び順・絞り込みをそのまま画像にする。
+        const shareBuilders = {
+            'monthly': () => createChartImage(document.getElementById('chart-monthly'), '月別の推移', { subtitle: periodSubtitle }),
+            'location': () => createChartImage(document.getElementById('chart-location'), '場所別の配布枚数', { subtitle: periodSubtitle }),
+            'weather': () => createChartImage(document.getElementById('chart-weather'), '天候別の平均配布係数', { subtitle: periodSubtitle }),
+            'daytime': () => createTableImage({
+                title: '曜日×時間帯の配布係数',
+                subtitle: periodSubtitle,
+                note: '数値は配布係数（枚/分）の平均です。色が濃いほど効率が高い時間帯です。',
+                columns: [
+                    { label: '曜日', align: 'center', min: 96, max: 120 },
+                    ...hours.map(h => ({ label: `${h}時`, align: 'center', min: 76, max: 96 })),
+                ],
+                rows: dayNames.map(day => [
+                    { text: day, bold: true },
+                    ...hours.map(hour => {
+                        const cell = dayTimeGrid[day]?.[hour];
+                        if (!cell || cell.rates.length === 0) return { text: '-', bg: C.sunken, color: C.faint };
+                        const rate = avg(cell.rates);
+                        const step = heatStep(rate);
+                        return { text: rate, bg: HEAT[step], color: step >= 3 ? '#ffffff' : C.accent, bold: true };
+                    }),
+                ]),
+                maxRows: dayNames.length,
+            }),
+            'summary-month': () => createTableImage({
+                title: '月別サマリー',
+                subtitle: periodSubtitle,
+                columns: [
+                    { label: '月', min: 150 },
+                    { label: '回数', align: 'right' },
+                    { label: '時間(分)', align: 'right' },
+                    { label: '配布枚数', align: 'right' },
+                    { label: '平均係数', align: 'right' },
+                ],
+                rows: monthKeys.map(m => [
+                    { text: m, bold: true },
+                    byMonth[m].count,
+                    byMonth[m].duration,
+                    byMonth[m].dist.toLocaleString(),
+                    avg(byMonth[m].rates),
+                ]),
+                maxRows: 24,
+            }),
+            'summary-location': () => createTableImage({
+                title: '場所別サマリー',
+                subtitle: periodSubtitle,
+                note: '画面と同じ並び順で出力しています。',
+                columns: [
+                    { label: '場所', min: 280, max: 460 },
+                    { label: '回数', align: 'right' },
+                    { label: '時間(分)', align: 'right' },
+                    { label: '配布枚数', align: 'right' },
+                    { label: '平均係数', align: 'right' },
+                ],
+                rows: sortedLocations.map(d => [
+                    { text: d.loc, bold: true },
+                    d.count,
+                    d.duration,
+                    d.dist.toLocaleString(),
+                    d.avg,
+                ]),
+            }),
+            'crosstab': () => {
+                const shownMonths = monthKeys.slice(-12);
+                return createTableImage({
+                    title: '場所×月 クロス集計',
+                    subtitle: periodSubtitle,
+                    note: [
+                        '数値は配布枚数です。合計の多い場所順に並べています。',
+                        monthKeys.length > shownMonths.length ? `直近${shownMonths.length}か月を表示しています。` : '',
+                    ].filter(Boolean).join(''),
+                    columns: [
+                        { label: '場所', min: 280, max: 460 },
+                        ...shownMonths.map(m => ({ label: m.slice(2), align: 'right', min: 100 })),
+                        { label: '合計', align: 'right', min: 120 },
+                    ],
+                    rows: allLocs
+                        .slice()
+                        .sort((a, b) => byLocation[b].dist - byLocation[a].dist)
+                        .map(loc => [
+                            { text: loc, bold: true },
+                            ...shownMonths.map(m => (crossTable[loc][m].dist || '-')),
+                            { text: byLocation[loc].dist.toLocaleString(), bold: true, bg: C.sunken },
+                        ]),
+                });
+            },
+            'ranking-location': () => createRankingImage({
+                title: '場所ランキング',
+                subtitle: periodSubtitle,
+                note: '大きな数値は配布係数（枚/分）の平均です。',
+                items: locationRanking.map(loc => ({
+                    name: loc.name,
+                    primary: loc.avgRate,
+                    secondary: `配布 ${loc.dist.toLocaleString()}枚 ｜ ${loc.count}回`,
+                })),
+            }),
+            'activity-map': () => createActivityMapImage('活動量マップ'),
+        };
+
         let defaultOrder = CHART_CONFIGS.map(c => c.id);
         let chartOrder = JSON.parse(localStorage.getItem(DASHBOARD_ORDER_KEY) || JSON.stringify(defaultOrder));
         CHART_CONFIGS.forEach(c => { if (!chartOrder.includes(c.id)) chartOrder.push(c.id); });
 
         const blocks = {
-            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trend')}月別の推移</div><div class="chart-title-actions"><button class="btn btn-secondary btn-sm chart-share" data-canvas="chart-monthly" data-title="月別の推移">画像共有</button><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div></div><div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
+            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}">${chartHead('trend', '月別の推移', 'monthly')}<div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
             'location': `<div class="chart-container toggle-target" data-id="location" style="${isHidden('location')}">
-        <div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}場所別の配布枚数</div><div class="chart-title-actions"><button class="btn btn-secondary btn-sm chart-share" data-canvas="chart-location" data-title="場所別の配布枚数">画像共有</button><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div></div>
+        ${chartHead('pin', '場所別の配布枚数', 'location')}
         <div class="data-table-wrapper" style="margin-bottom:0;">
             <div style="min-width: ${Math.max(600, Object.keys(byLocation).length * 60)}px; height: 300px;">
                 <canvas id="chart-location"></canvas>
@@ -157,23 +285,22 @@ export async function render(container) {
         </div>
         <div style="font-size:0.7rem; color:var(--ink-muted); text-align:center; margin-top:4px;">(横スクロールで全地点を確認できます)</div>
       </div>`,
-            'weather': `<div class="chart-container toggle-target" data-id="weather" style="${isHidden('weather')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('cloud')}天候別の平均配布係数</div><div class="chart-title-actions"><button class="btn btn-secondary btn-sm chart-share" data-canvas="chart-weather" data-title="天候別の平均配布係数">画像共有</button><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div></div><div class="chart-canvas-wrapper"><canvas id="chart-weather"></canvas></div></div>`,
-            'daytime': `<div class="chart-container toggle-target" data-id="daytime" style="${isHidden('daytime')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('calendar')}曜日×時間帯の配布係数</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
+            'weather': `<div class="chart-container toggle-target" data-id="weather" style="${isHidden('weather')}">${chartHead('cloud', '天候別の平均配布係数', 'weather')}<div class="chart-canvas-wrapper"><canvas id="chart-weather"></canvas></div></div>`,
+            'daytime': `<div class="chart-container toggle-target" data-id="daytime" style="${isHidden('daytime')}">${chartHead('calendar', '曜日×時間帯の配布係数', 'daytime')}<div class="data-table-wrapper">
         <table class="data-table heatmap-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface); box-shadow: 1px 0 0 var(--line);">曜日</th>${hours.map(h => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${dayNames.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);font-weight:600;border-right:1px solid var(--line); box-shadow: 1px 0 0 var(--line);">${d}</td>${hours.map(h => {
         const cell = dayTimeGrid[d]?.[h];
         if (!cell || cell.rates.length === 0) return `<td style="background:${C.sunken};color:${C.faint};">-</td>`;
         const a = avg(cell.rates);
-        const aNum = parseFloat(a);
-        const step = aNum >= 3.0 ? 4 : aNum >= 2.0 ? 3 : aNum >= 1.0 ? 2 : aNum >= 0.5 ? 1 : 0;
+        const step = heatStep(a);
         const textColor = step >= 3 ? '#ffffff' : C.accent;
         return `<td style="background:${HEAT[step]};color:${textColor};font-weight:700;">${a}</td>`;
     }).join('')}</tr>`).join('')}</tbody></table></div></div>`,
-            'summary-month': `<div class="chart-container toggle-target" data-id="summary-month" style="${isHidden('summary-month')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('calendar')}月別サマリー</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
+            'summary-month': `<div class="chart-container toggle-target" data-id="summary-month" style="${isHidden('summary-month')}">${chartHead('calendar', '月別サマリー', 'summary-month')}<div class="data-table-wrapper">
         <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface);box-shadow: 1px 0 0 var(--line);">月</th><th>回数</th><th>時間(分)</th><th>配布枚数</th><th>平均係数</th></tr></thead>
         <tbody>${monthKeys.map(m => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);box-shadow: 1px 0 0 var(--line);">${m}</td><td>${byMonth[m].count}</td><td>${byMonth[m].duration}</td><td>${byMonth[m].dist.toLocaleString()}</td><td>${avg(byMonth[m].rates)}</td></tr>`).join('')}</tbody></table></div></div>`,
             'summary-location': `<div class="chart-container toggle-target" data-id="summary-location" style="${isHidden('summary-location')}">
-        <div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}場所別サマリー</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
+        ${chartHead('pin', '場所別サマリー', 'summary-location')}
         <div class="data-table-wrapper" style="max-height: 400px; overflow-y: auto;">
             <table class="data-table">
             <thead style="position: sticky; top: 0; z-index: 20;">
@@ -188,13 +315,13 @@ export async function render(container) {
             <tbody>${sortedLocations.map(d => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);font-weight:600;box-shadow: 1px 0 0 var(--line); white-space: normal; min-width:100px;">${d.loc}</td><td>${d.count}</td><td>${d.duration}</td><td>${d.dist.toLocaleString()}</td><td>${d.avg}</td></tr>`).join('')}</tbody></table>
         </div>
       </div>`,
-            'crosstab': `<div class="chart-container toggle-target" data-id="crosstab" style="${isHidden('crosstab')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('chart')}場所×月 クロス集計</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div class="data-table-wrapper">
+            'crosstab': `<div class="chart-container toggle-target" data-id="crosstab" style="${isHidden('crosstab')}">${chartHead('chart', '場所×月 クロス集計', 'crosstab')}<div class="data-table-wrapper">
         <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface);box-shadow: 1px 0 0 var(--line);">場所</th>${monthKeys.map(m => `<th>${m}</th>`).join('')}<th>合計</th></tr></thead>
         <tbody>${allLocs.map(loc => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);font-weight:600;box-shadow: 1px 0 0 var(--line); white-space: normal; min-width:100px;">${loc}</td>${monthKeys.map(m => `<td>${crossTable[loc][m].dist || '-'}</td>`).join('')}<td style="font-weight:700; background:var(--surface-sunken);">${byLocation[loc].dist.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`,
-            'ranking-location': `<div class="chart-container toggle-target" data-id="ranking-location" style="${isHidden('ranking-location')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('trophy')}場所ランキング</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div>
+            'ranking-location': `<div class="chart-container toggle-target" data-id="ranking-location" style="${isHidden('ranking-location')}">${chartHead('trophy', '場所ランキング', 'ranking-location')}
         ${locationRanking.map((loc, i) => `<div class="ranking-item"><div class="ranking-rank ${i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : ''}">${i + 1}</div><div class="ranking-info"><div class="ranking-name">${loc.name}</div><div class="ranking-stat">係数: <span style="font-weight:600;color:var(--ink);">${loc.avgRate}</span> ｜ 配布: ${loc.dist.toLocaleString()}枚 ｜ ${loc.count}回</div></div></div>`).join('')}
       </div>`,
-            'activity-map': `<div class="chart-container toggle-target" data-id="activity-map" style="${isHidden('activity-map')}"><div class="chart-title"><div style="display:flex;align-items:center;gap:8px;">${icon('pin')}活動量マップ</div><div class="drag-handle" title="並び替え"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14"/></svg></div></div><div id="activity-map-root"></div></div>`
+            'activity-map': `<div class="chart-container toggle-target" data-id="activity-map" style="${isHidden('activity-map')}">${chartHead('pin', '活動量マップ', 'activity-map')}<div id="activity-map-root"></div></div>`
         };
 
         const sortedChartsHTML = chartOrder.map(id => blocks[id] || '').join('');
@@ -241,7 +368,8 @@ export async function render(container) {
         });
         document.getElementById('btn-share-dashboard').addEventListener('click', () => openShareDialog(records));
         container.querySelectorAll('.chart-share').forEach(button => button.addEventListener('click', () => {
-            openChartShareDialog(document.getElementById(button.dataset.canvas), button.dataset.title);
+            const id = button.dataset.share;
+            openImageShareDialog(button.dataset.label || '分析', shareBuilders[id]);
         }));
 
         // Config checkboxes
