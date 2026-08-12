@@ -55,6 +55,268 @@ export function buildReportText(records) {
     ].join('\n');
 }
 
+// ===== 画像生成の共通部品 =====
+// 表・ランキング・地図など、Canvasを持たないダッシュボードも同じ体裁の画像にする。
+const IMG = {
+    bg: '#ffffff',
+    bar: '#1f4d63',
+    ink: '#1a1c1b',
+    muted: '#55595a',
+    faint: '#8a8f90',
+    line: '#e0e0dd',
+    sunken: '#f1f1f0',
+    accent: '#1f4d63',
+};
+const IMG_PAD = 54;
+const IMG_MIN_WIDTH = 1080;
+const IMG_MAX_WIDTH = 2200;
+
+let measureContext = null;
+
+function measureCtx() {
+    if (!measureContext) measureContext = document.createElement('canvas').getContext('2d');
+    return measureContext;
+}
+
+function imgFont(weight, size) {
+    return `${weight} ${size}px "Noto Sans JP", sans-serif`;
+}
+
+function fitText(ctx, text, maxWidth) {
+    const value = String(text ?? '');
+    if (maxWidth <= 0 || ctx.measureText(value).width <= maxWidth) return value;
+    let cut = value;
+    while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxWidth) cut = cut.slice(0, -1);
+    return `${cut}…`;
+}
+
+function canvasToBlob(canvas, message = '画像を作成できませんでした。') {
+    return new Promise((resolve, reject) => canvas.toBlob(blob => (
+        blob ? resolve(blob) : reject(new Error(message))
+    ), 'image/png'));
+}
+
+function headerHeight(subtitle) {
+    return subtitle ? 156 : 120;
+}
+
+function footerHeight(note) {
+    return note ? 100 : 64;
+}
+
+/**
+ * 見出し・注記付きの共有画像を作る汎用ヘルパー。
+ * draw(ctx, x, y, width, height) に本文の描画を任せる。
+ */
+export async function createFramedImage({ title, subtitle = '', note = '', width, height, draw }) {
+    await document.fonts?.ready;
+    const top = headerHeight(subtitle);
+    const bottom = footerHeight(note);
+    const canvasWidth = Math.min(IMG_MAX_WIDTH, Math.max(IMG_MIN_WIDTH, Math.ceil(width) + IMG_PAD * 2));
+    // 本文が上限幅に収まらないときは縮小して描く（切れた画像を共有しないため）
+    const scale = Math.min(1, (canvasWidth - IMG_PAD * 2) / width);
+    const drawWidth = width * scale;
+    const drawHeight = height * scale;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasWidth;
+    canvas.height = Math.ceil(top + drawHeight + bottom);
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = IMG.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = IMG.bar;
+    ctx.fillRect(0, 0, canvas.width, 14);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = IMG.ink;
+    ctx.font = imgFont(700, 46);
+    ctx.fillText(fitText(ctx, title, canvas.width - IMG_PAD * 2), IMG_PAD, 86);
+    if (subtitle) {
+        ctx.fillStyle = IMG.muted;
+        ctx.font = imgFont(400, 24);
+        ctx.fillText(fitText(ctx, subtitle, canvas.width - IMG_PAD * 2), IMG_PAD, 126);
+    }
+
+    ctx.save();
+    ctx.translate(Math.round((canvas.width - drawWidth) / 2), top);
+    ctx.scale(scale, scale);
+    await draw(ctx, 0, 0, width, height);
+    ctx.restore();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    if (note) {
+        ctx.fillStyle = IMG.muted;
+        ctx.font = imgFont(400, 22);
+        ctx.fillText(fitText(ctx, note, canvas.width - IMG_PAD * 2), IMG_PAD, canvas.height - 58);
+    }
+    ctx.fillStyle = IMG.faint;
+    ctx.font = imgFont(400, 20);
+    ctx.fillText(`作成日 ${new Date().toLocaleDateString('ja-JP')}`, IMG_PAD, canvas.height - 24);
+
+    return canvasToBlob(canvas);
+}
+
+function normalizeCell(cell) {
+    if (cell && typeof cell === 'object') {
+        return {
+            text: String(cell.text ?? ''),
+            bg: cell.bg || '',
+            color: cell.color || IMG.ink,
+            bold: Boolean(cell.bold),
+            align: cell.align || '',
+        };
+    }
+    return { text: String(cell ?? ''), bg: '', color: IMG.ink, bold: false, align: '' };
+}
+
+function drawCellText(ctx, text, x, width, centerY, align) {
+    const inner = width - 32;
+    if (align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(fitText(ctx, text, inner), x + width - 16, centerY);
+    } else if (align === 'center') {
+        ctx.textAlign = 'center';
+        ctx.fillText(fitText(ctx, text, inner), x + width / 2, centerY);
+    } else {
+        ctx.textAlign = 'left';
+        ctx.fillText(fitText(ctx, text, inner), x + 16, centerY);
+    }
+}
+
+/**
+ * 表形式のダッシュボード（サマリー・クロス集計・ヒートマップ）を画像にする。
+ * columns: [{ label, align, min, max }] / rows: [[cell, ...]]
+ * cell は文字列、または { text, bg, color, bold, align }。
+ */
+export async function createTableImage({ title, subtitle = '', columns, rows, note = '', maxRows = 30 }) {
+    await document.fonts?.ready;
+    const gauge = measureCtx();
+    const headFont = imgFont(700, 24);
+    const bodyFont = imgFont(400, 24);
+    const shown = rows.slice(0, maxRows);
+    const omitted = rows.length - shown.length;
+
+    const widths = columns.map((column, index) => {
+        gauge.font = headFont;
+        let width = gauge.measureText(String(column.label ?? '')).width;
+        gauge.font = bodyFont;
+        for (const row of shown) width = Math.max(width, gauge.measureText(normalizeCell(row[index]).text).width);
+        return Math.max(column.min ?? 96, Math.min(Math.ceil(width) + 34, column.max ?? 380));
+    });
+    // 列が多いときは広い列から詰めて、画像が横に伸びすぎないようにする
+    const available = IMG_MAX_WIDTH - IMG_PAD * 2;
+    let total = widths.reduce((sum, width) => sum + width, 0);
+    while (total > available) {
+        const widest = widths.indexOf(Math.max(...widths));
+        if (widths[widest] <= 110) break;
+        widths[widest] -= 20;
+        total -= 20;
+    }
+
+    const rowHeight = 52;
+    const headHeight = 60;
+    const notes = [note, omitted > 0 ? `ほか${omitted}行は省略しています。` : ''].filter(Boolean).join('　');
+
+    return createFramedImage({
+        title,
+        subtitle,
+        note: notes,
+        width: total,
+        height: headHeight + shown.length * rowHeight,
+        draw(ctx, x, y) {
+            ctx.textBaseline = 'middle';
+            let cursor = x;
+            columns.forEach((column, index) => {
+                ctx.fillStyle = IMG.sunken;
+                ctx.fillRect(cursor, y, widths[index], headHeight);
+                ctx.fillStyle = IMG.muted;
+                ctx.font = headFont;
+                drawCellText(ctx, String(column.label ?? ''), cursor, widths[index], y + headHeight / 2, column.align);
+                cursor += widths[index];
+            });
+            ctx.fillStyle = IMG.accent;
+            ctx.fillRect(x, y + headHeight - 3, total, 3);
+
+            shown.forEach((row, rowIndex) => {
+                const rowY = y + headHeight + rowIndex * rowHeight;
+                cursor = x;
+                columns.forEach((column, index) => {
+                    const cell = normalizeCell(row[index]);
+                    if (cell.bg) {
+                        ctx.fillStyle = cell.bg;
+                        ctx.fillRect(cursor, rowY, widths[index], rowHeight);
+                    }
+                    ctx.fillStyle = cell.color;
+                    ctx.font = imgFont(cell.bold ? 700 : 400, 24);
+                    drawCellText(ctx, cell.text, cursor, widths[index], rowY + rowHeight / 2, cell.align || column.align);
+                    cursor += widths[index];
+                });
+                ctx.fillStyle = IMG.line;
+                ctx.fillRect(x, rowY + rowHeight - 1, total, 1);
+            });
+            ctx.textBaseline = 'alphabetic';
+            ctx.textAlign = 'left';
+        },
+    });
+}
+
+const RANK_COLORS = ['#c08a2e', '#8a9296', '#a0703a'];
+
+/**
+ * ランキング表示のダッシュボードを画像にする。
+ * items: [{ name, primary, secondary }]
+ */
+export async function createRankingImage({ title, subtitle = '', items, note = '', maxItems = 12 }) {
+    const shown = items.slice(0, maxItems);
+    const omitted = items.length - shown.length;
+    const rowHeight = 96;
+    const notes = [note, omitted > 0 ? `ほか${omitted}件は省略しています。` : ''].filter(Boolean).join('　');
+
+    return createFramedImage({
+        title,
+        subtitle,
+        note: notes,
+        width: IMG_MIN_WIDTH - IMG_PAD * 2,
+        height: Math.max(rowHeight, shown.length * rowHeight),
+        draw(ctx, x, y, width) {
+            shown.forEach((item, index) => {
+                const rowY = y + index * rowHeight;
+                ctx.beginPath();
+                ctx.fillStyle = RANK_COLORS[index] || IMG.line;
+                ctx.arc(x + 30, rowY + 44, 27, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = index < 3 ? '#ffffff' : IMG.muted;
+                ctx.font = imgFont(700, 26);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(String(index + 1), x + 30, rowY + 45);
+
+                ctx.textAlign = 'left';
+                ctx.fillStyle = IMG.ink;
+                ctx.font = imgFont(600, 28);
+                ctx.fillText(fitText(ctx, item.name, width - 96), x + 80, rowY + 32);
+                ctx.fillStyle = IMG.muted;
+                ctx.font = imgFont(400, 23);
+                ctx.fillText(fitText(ctx, item.secondary || '', width - 96), x + 80, rowY + 68);
+
+                if (item.primary) {
+                    ctx.textAlign = 'right';
+                    ctx.fillStyle = IMG.accent;
+                    ctx.font = imgFont(700, 30);
+                    ctx.fillText(item.primary, x + width, rowY + 46);
+                    ctx.textAlign = 'left';
+                }
+                ctx.fillStyle = IMG.line;
+                ctx.fillRect(x, rowY + rowHeight - 1, width, 1);
+            });
+            ctx.textBaseline = 'alphabetic';
+            ctx.textAlign = 'left';
+        },
+    });
+}
+
 function roundedRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -132,9 +394,7 @@ export async function createReportImage(records) {
     ctx.font = '400 20px "Noto Sans JP", sans-serif';
     ctx.fillText(`作成日 ${new Date().toLocaleDateString('ja-JP')}`, 70, 1300);
 
-    return new Promise((resolve, reject) => canvas.toBlob(blob => (
-        blob ? resolve(blob) : reject(new Error('画像を作成できませんでした。'))
-    ), 'image/png'));
+    return canvasToBlob(canvas);
 }
 
 async function copyText(text) {
@@ -218,44 +478,69 @@ export function openShareDialog(records) {
     });
 }
 
-export async function openChartShareDialog(sourceCanvas, title) {
-    if (!sourceCanvas) return;
-    const width = 1080;
+/** Chart.js のCanvasを見出し付きの共有画像にする。 */
+export function createChartImage(sourceCanvas, title, { subtitle = '', note = '' } = {}) {
+    if (!sourceCanvas) return Promise.reject(new Error('グラフを読み込めていないため画像を作成できません。'));
+    const width = IMG_MIN_WIDTH - IMG_PAD * 2;
     const ratio = sourceCanvas.height / Math.max(sourceCanvas.width, 1);
-    const chartHeight = Math.min(820, Math.max(420, Math.round(width * ratio)));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = chartHeight + 190;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#1f4d63';
-    ctx.fillRect(0, 0, canvas.width, 14);
-    ctx.fillStyle = '#1a1c1b';
-    ctx.font = '700 46px "Noto Sans JP", sans-serif';
-    ctx.fillText(title, 54, 82);
-    ctx.drawImage(sourceCanvas, 40, 125, width - 80, chartHeight);
-    const blob = await new Promise((resolve, reject) => canvas.toBlob(value => (
-        value ? resolve(value) : reject(new Error('グラフ画像を作成できませんでした。'))
-    ), 'image/png'));
-    const previewUrl = URL.createObjectURL(blob);
+    const height = Math.min(820, Math.max(420, Math.round(width * ratio)));
+    return createFramedImage({
+        title,
+        subtitle,
+        note,
+        width,
+        height,
+        draw(ctx, x, y) {
+            ctx.drawImage(sourceCanvas, x, y, width, height);
+        },
+    });
+}
 
+/**
+ * 画像を作ってからプレビュー付きで共有するダイアログ。
+ * createBlob は Promise<Blob> を返す関数。
+ */
+export function openImageShareDialog(title, createBlob) {
     document.getElementById('share-chart-modal')?.remove();
     const modal = document.createElement('div');
     modal.id = 'share-chart-modal';
     modal.className = 'modal-overlay';
     modal.innerHTML = `<div class="modal-sheet share-modal-sheet">
       <div class="modal-head"><div><div class="modal-title">${esc(title)}を共有</div><div class="modal-sub">画像を確認してから共有できます。</div></div><button class="btn btn-secondary btn-sm" id="share-chart-close">閉じる</button></div>
-      <img class="share-chart-preview" src="${previewUrl}" alt="${esc(title)}の共有画像">
-      <button class="btn btn-primary btn-full" id="share-chart-button">この画像を共有</button>
-      <div class="map-status text-sm" id="share-chart-status" aria-live="polite"></div>
+      <img class="share-chart-preview" id="share-chart-preview" alt="${esc(title)}の共有画像" hidden>
+      <button class="btn btn-primary btn-full" id="share-chart-button" disabled>この画像を共有</button>
+      <div class="map-status text-sm" id="share-chart-status" aria-live="polite">画像を作成しています…</div>
     </div>`;
     document.body.appendChild(modal);
-    const close = () => { URL.revokeObjectURL(previewUrl); modal.remove(); };
+
+    let previewUrl = '';
+    const close = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); modal.remove(); };
     document.getElementById('share-chart-close').addEventListener('click', close);
     modal.addEventListener('click', event => { if (event.target === modal) close(); });
-    document.getElementById('share-chart-button').addEventListener('click', async () => {
-        const result = await shareImage(blob, title);
-        document.getElementById('share-chart-status').textContent = result === 'downloaded' ? '画像をダウンロードしました。' : '';
-    });
+
+    const status = () => document.getElementById('share-chart-status');
+    return Promise.resolve()
+        .then(createBlob)
+        .then(blob => {
+            if (!modal.isConnected) return;
+            previewUrl = URL.createObjectURL(blob);
+            const preview = document.getElementById('share-chart-preview');
+            preview.src = previewUrl;
+            preview.hidden = false;
+            status().textContent = '';
+            const button = document.getElementById('share-chart-button');
+            button.disabled = false;
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+                try {
+                    const result = await shareImage(blob, title);
+                    status().textContent = result === 'downloaded' ? '画像をダウンロードしました。' : '';
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        })
+        .catch(error => {
+            if (modal.isConnected) status().textContent = error?.message || '画像を作成できませんでした。';
+        });
 }

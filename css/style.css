@@ -374,7 +374,8 @@ main {
 .share-modal-sheet { width: min(620px, 100%); }
 .share-preview { min-height: 300px; }
 .share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s3); }
-.chart-title-actions { display: flex; align-items: center; gap: var(--s2); }
+.chart-title-actions { display: flex; align-items: center; gap: var(--s2); margin-left: auto; flex-shrink: 0; }
+.chart-title-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .share-chart-preview { display: block; width: 100%; max-height: 58vh; object-fit: contain; margin-bottom: var(--s3); border: 1px solid var(--line); background: #fff; }
 
 /* ===== 選択タグ ===== */
