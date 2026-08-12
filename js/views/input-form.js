@@ -1,6 +1,7 @@
 // ===== 入力画面（品川区カスタマイズ版） =====
 import * as store from '../store.js';
 import { validateRecord } from '../validation.js';
+import { todayISO } from '../calculations.js';
 import { icon } from '../utils/icons.js';
 import { LOCATION_CATALOG, findLocationBySpot } from '../location-catalog.js';
 import { parseActivityMemo } from '../memo-parser.js';
@@ -25,12 +26,41 @@ function escapeHtml(value) {
 
 let editingId = null;
 let allRecordsCache = [];
+// 複製入力の下敷き。1回描画したら捨てる。
+let template = null;
 
 export function setEditingId(id) { editingId = id; }
 
+/**
+ * 既存の記録を下敷きに新規入力を開く。
+ * 引き継ぐのは場所・時間帯・実施形態などの段取りだけで、実績値は引き継がない。
+ */
+export function setTemplateFrom(source) {
+    if (!source) { template = null; return; }
+    template = {
+        startTime: source.startTime || '',
+        endTime: source.endTime || '',
+        area: source.area || '',
+        locality: source.locality || '',
+        spot: source.spot || '',
+        spotId: source.spotId || '',
+        address: source.address || '',
+        volunteerCount: source.volunteerCount ?? 0,
+        volunteerNames: source.volunteerNames || '',
+        formType: source.formType || '',
+        micType: source.micType || '',
+        groupType: source.groupType || '',
+        themes: [...(source.themes || [])],
+        materials: [...(source.materials || [])],
+    };
+}
+
 export async function render(container, { onSaved }) {
-    const record = editingId ? await store.getById(editingId) : null;
-    const isEdit = !!record;
+    const editingRecord = editingId ? await store.getById(editingId) : null;
+    const isEdit = !!editingRecord;
+    const duplicated = !isEdit && Boolean(template);
+    const record = editingRecord || template;
+    template = null;
     
     // Fetch async data
     const recentLocations = await store.getRecentLocations(5);
@@ -62,7 +92,7 @@ export async function render(container, { onSaved }) {
         if (locationTags.length >= 8) break;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayISO();
     const nowH = new Date().getHours().toString().padStart(2, '0');
     const nowM = (Math.floor(new Date().getMinutes() / 15) * 15).toString().padStart(2, '0');
     const timerStart = ownTimer ? activityTimer.localDateTimeParts(ownTimer.startedAt) : null;
@@ -72,6 +102,7 @@ export async function render(container, { onSaved }) {
     container.innerHTML = `
     <div>
       <h2 class="section-title">${icon('edit', { size: 19 })}${isEdit ? '記録を編集' : '新しい記録'}</h2>
+      ${duplicated ? '<p class="section-note">前の記録から場所と段取りを引き継ぎました。日付と実績を確認して保存してください。</p>' : ''}
       <form id="activity-form" novalidate>
         ${isEdit ? '' : renderTimerCard(activeTimer, ownTimer)}
         ${isEdit ? '' : `

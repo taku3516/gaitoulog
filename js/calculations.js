@@ -28,6 +28,11 @@ export function getYearMonth(dateStr) {
     return dateStr.substring(0, 7);
 }
 
+/** 端末のローカル日付。UTCで求めると朝の活動が前日扱いになるため。 */
+export function todayISO(base = new Date()) {
+    return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+}
+
 export function getHour(timeStr) {
     return parseInt(timeStr.split(':')[0], 10);
 }
