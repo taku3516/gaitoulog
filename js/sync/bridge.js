@@ -58,7 +58,7 @@ window.GAITOULOG_SYNC_BRIDGE = Object.freeze({
     getCurrentState: async () => ({
         records: await store.getAllRaw(),
         politicians: store.getPoliticians(),
-        spots: spotStore.getCustomSpots({ includeArchived: true }),
+        spots: spotStore.getCustomSpots({ includeArchived: true, includeDeleted: true }),
     }),
 
     setCloudActive: (value) => {

@@ -165,8 +165,11 @@ function normalizeSpot(spot) {
         lng,
         source: 'custom',
         archived: Boolean(spot.archived),
+        deleted: Boolean(spot.deleted),
         schemaVersion: SCHEMA_VERSION,
     };
+    const baselineVersion = normalizeString(spot.baselineVersion, 20);
+    if (baselineVersion) out.baselineVersion = baselineVersion;
     if (locality) out.locality = locality;
     const createdAt = normalizeString(spot.createdAt, 30);
     const updatedAt = normalizeString(spot.updatedAt, 30);
