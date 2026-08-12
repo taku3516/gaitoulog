@@ -100,8 +100,28 @@ function headerHeight(subtitle) {
     return subtitle ? 156 : 120;
 }
 
-function footerHeight(note) {
-    return note ? 100 : 64;
+// 注記は日本語で折り返し位置が取れないため、幅を測りながら1文字ずつ詰める
+function wrapText(ctx, text, maxWidth, maxLines = 2) {
+    const value = String(text ?? '');
+    if (!value) return [];
+    const lines = [];
+    let current = '';
+    for (let index = 0; index < value.length; index++) {
+        const char = value[index];
+        if (current && ctx.measureText(current + char).width > maxWidth) {
+            if (lines.length === maxLines - 1) {
+                // 最終行は残り全部を入れて、入りきらない分だけ省略する
+                lines.push(fitText(ctx, value.slice(index - current.length), maxWidth));
+                return lines;
+            }
+            lines.push(current);
+            current = char;
+        } else {
+            current += char;
+        }
+    }
+    if (current) lines.push(current);
+    return lines;
 }
 
 /**
@@ -111,8 +131,11 @@ function footerHeight(note) {
 export async function createFramedImage({ title, subtitle = '', note = '', width, height, draw }) {
     await document.fonts?.ready;
     const top = headerHeight(subtitle);
-    const bottom = footerHeight(note);
     const canvasWidth = Math.min(IMG_MAX_WIDTH, Math.max(IMG_MIN_WIDTH, Math.ceil(width) + IMG_PAD * 2));
+    const gauge = measureCtx();
+    gauge.font = imgFont(400, 22);
+    const noteLines = wrapText(gauge, note, canvasWidth - IMG_PAD * 2, 2);
+    const bottom = 64 + noteLines.length * 30;
     // 本文が上限幅に収まらないときは縮小して描く（切れた画像を共有しないため）
     const scale = Math.min(1, (canvasWidth - IMG_PAD * 2) / width);
     const drawWidth = width * scale;
@@ -146,11 +169,11 @@ export async function createFramedImage({ title, subtitle = '', note = '', width
 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    if (note) {
-        ctx.fillStyle = IMG.muted;
-        ctx.font = imgFont(400, 22);
-        ctx.fillText(fitText(ctx, note, canvas.width - IMG_PAD * 2), IMG_PAD, canvas.height - 58);
-    }
+    ctx.fillStyle = IMG.muted;
+    ctx.font = imgFont(400, 22);
+    noteLines.forEach((line, index) => {
+        ctx.fillText(line, IMG_PAD, canvas.height - 58 - (noteLines.length - 1 - index) * 30);
+    });
     ctx.fillStyle = IMG.faint;
     ctx.font = imgFont(400, 20);
     ctx.fillText(`作成日 ${new Date().toLocaleDateString('ja-JP')}`, IMG_PAD, canvas.height - 24);
@@ -492,6 +515,43 @@ export function createChartImage(sourceCanvas, title, { subtitle = '', note = ''
         height,
         draw(ctx, x, y) {
             ctx.drawImage(sourceCanvas, x, y, width, height);
+        },
+    });
+}
+
+/** 複数のCanvasを縦に並べて1枚の共有画像にする。 */
+export function createChartsImage(charts, title, { subtitle = '', note = '' } = {}) {
+    const items = (charts || []).filter(item => item?.canvas);
+    if (!items.length) return Promise.reject(new Error('グラフを読み込めていないため画像を作成できません。'));
+    const width = IMG_MIN_WIDTH - IMG_PAD * 2;
+    const captionHeight = 44;
+    const gap = 36;
+    const sized = items.map(item => {
+        const ratio = item.canvas.height / Math.max(item.canvas.width, 1);
+        return { ...item, height: Math.min(520, Math.max(300, Math.round(width * ratio))) };
+    });
+    const height = sized.reduce((sum, item) => sum + captionHeight + item.height, 0) + gap * (sized.length - 1);
+
+    return createFramedImage({
+        title,
+        subtitle,
+        note,
+        width,
+        height,
+        draw(ctx, x, y) {
+            let cursor = y;
+            for (const item of sized) {
+                if (item.caption) {
+                    ctx.fillStyle = IMG.ink;
+                    ctx.font = imgFont(600, 28);
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'alphabetic';
+                    ctx.fillText(fitText(ctx, item.caption, width), x, cursor + 30);
+                }
+                cursor += captionHeight;
+                ctx.drawImage(item.canvas, x, cursor, width, item.height);
+                cursor += item.height + gap;
+            }
         },
     });
 }
