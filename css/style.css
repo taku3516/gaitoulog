@@ -398,6 +398,8 @@ main {
 .plan-spot { font-size: var(--t-sm); font-weight: 700; overflow-wrap: anywhere; }
 .plan-meta { font-size: var(--t-xs); color: var(--ink-muted); overflow-wrap: anywhere; }
 .plan-actions { display: flex; flex-direction: column; gap: var(--s1); flex-shrink: 0; }
+/* カレンダー登録の2つは幅を揃え、リンクもボタンと同じ見た目にする */
+.plan-actions > * { width: 100%; justify-content: center; text-decoration: none; }
 .rec-plan { margin-top: var(--s2); }
 
 .report-preview {

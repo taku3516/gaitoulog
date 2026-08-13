@@ -141,6 +141,57 @@ export function downloadIcs(plan) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ---- Googleカレンダーの予定作成画面 ----
+
+const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/render';
+const PLAN_DURATION_MINUTES = 60;
+const PLAN_TIMEZONE = 'Asia/Tokyo';
+
+/** 壁時計の足し算。1時間後が翌日へ回る場合は日付も繰り上げる。 */
+function shiftDateTime(dateStr, timeStr, minutes) {
+    const [year, month, day] = String(dateStr).split('-').map(Number);
+    const [hour, minute] = (timeStr || '00:00').split(':').map(Number);
+    const at = new Date(Date.UTC(year, month - 1, day, hour, minute + minutes));
+    const pad = value => String(value).padStart(2, '0');
+    return {
+        date: `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`,
+        time: `${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}`,
+    };
+}
+
+function compactDate(dateStr) {
+    return String(dateStr).replace(/-/g, '');
+}
+
+function compactDateTime(dateStr, timeStr) {
+    return `${compactDate(dateStr)}T${String(timeStr).replace(':', '')}00`;
+}
+
+/**
+ * Googleカレンダーの予定作成画面を開くURLを作る。
+ * 予定は1時間として渡し、説明欄には何も入れない。
+ * 開始時刻が未定の予定は終日予定にする（終了日は翌日＝Googleの仕様で終了日は含まない）。
+ */
+export function buildGoogleCalendarUrl(plan) {
+    const place = [...new Set([plan.area, plan.locality, plan.spot].filter(Boolean))].join(' ');
+    const params = new URLSearchParams({
+        action: 'TEMPLATE',
+        text: `街頭活動 ${plan.spot || place}`.trim(),
+    });
+
+    if (plan.time) {
+        const end = shiftDateTime(plan.date, plan.time, PLAN_DURATION_MINUTES);
+        params.set('dates', `${compactDateTime(plan.date, plan.time)}/${compactDateTime(end.date, end.time)}`);
+        params.set('ctz', PLAN_TIMEZONE);
+    } else {
+        const nextDay = shiftDateTime(plan.date, '00:00', 24 * 60);
+        params.set('dates', `${compactDate(plan.date)}/${compactDate(nextDay.date)}`);
+    }
+    if (place) params.set('location', place);
+
+    return `${GOOGLE_CALENDAR_URL}?${params.toString()}`;
+}
+
 // ---- アプリを開いている間のリマインド ----
 
 export function notificationState() {
