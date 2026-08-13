@@ -1,4 +1,4 @@
-const CACHE_NAME = 'street-activity-log-v18';
+const CACHE_NAME = 'street-activity-log-v19';
 
 // 認証・API通信はキャッシュしない（トークン付きの応答を残さないため）
 const NO_CACHE_HOSTS = [

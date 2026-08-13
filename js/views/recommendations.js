@@ -42,7 +42,8 @@ export async function render(container) {
                         <div class="plan-meta">${esc([plan.area, plan.locality].filter(Boolean).join(' ／ '))}${plan.note ? `｜${esc(plan.note)}` : ''}</div>
                     </div>
                     <div class="plan-actions">
-                        <button class="btn btn-secondary btn-sm plan-ics" data-id="${esc(plan.id)}">カレンダー</button>
+                        <a class="btn btn-primary btn-sm" href="${esc(schedule.buildGoogleCalendarUrl(plan))}" target="_blank" rel="noopener">Google</a>
+                        <button class="btn btn-secondary btn-sm plan-ics" data-id="${esc(plan.id)}">ファイル</button>
                         <button class="btn btn-danger btn-sm plan-remove" data-id="${esc(plan.id)}">削除</button>
                     </div>
                 </div>`).join('');
@@ -52,6 +53,9 @@ export async function render(container) {
             if (!plan) return;
             schedule.downloadIcs(plan);
             planStatus('カレンダー用のファイルを保存しました。開くと端末のカレンダーへ登録できます。');
+        }));
+        listContainer.querySelectorAll('.plan-actions a').forEach(link => link.addEventListener('click', () => {
+            planStatus('Googleカレンダーの予定作成画面を開きます。内容を確認して保存してください。');
         }));
         listContainer.querySelectorAll('.plan-remove').forEach(button => button.addEventListener('click', () => {
             schedule.removePlan(button.dataset.id);
@@ -138,7 +142,8 @@ export async function render(container) {
     container.innerHTML = `
         <div>
             <h2 class="section-title">${icon('calendar', { size: 19 })}活動予定</h2>
-            <p class="section-note">予定の1時間前と開始時刻に、アプリを開いている間はお知らせします。アプリを閉じていても通知を受け取りたいときは「カレンダー」から端末のカレンダーへ登録してください。</p>
+            <p class="section-note">予定の1時間前と開始時刻に、アプリを開いている間はお知らせします。アプリを閉じていても通知を受け取りたいときは、カレンダーへ登録してください。<br>
+            「Google」はGoogleカレンダーの予定作成画面を開きます（通知はGoogleの既定設定）。「ファイル」は端末のカレンダー用のファイルを保存します（1時間前の通知つき）。</p>
 
             <div class="card">
                 <div id="plan-list" class="plan-list"></div>
