@@ -1,8 +1,9 @@
-// ===== ログイン方式の判定 =====
+// ===== ログイン環境の判定 =====
 //
-// ホーム画面に追加したアプリ（standalone表示）では、ポップアップでのGoogleログインが
-// 完了できない。ポップアップが親画面との結び付き（opener）を保てず、認証結果を返せないまま
-// 白い画面で止まる。この場合は画面ごと移動するリダイレクト方式へ切り替える。
+// ポップアップでのGoogleログインは、認証ページがアプリと別ドメインだと
+// ホーム画面のアプリ（standalone表示）で結果を返せず、白い画面のまま止まる。
+// 公開先を Firebase Hosting に移して同一ドメインにそろえたことで解消したため、
+// 既定はポップアップ方式。応答が無いときだけリダイレクト方式へ切り替える。
 //
 // ここには「判定」だけを置く。Firebase には依存しないので node でテストできる。
 
@@ -29,11 +30,6 @@ export function isStandaloneDisplay(win = globalThis) {
             return false; // 未対応の問い合わせで落とさない
         }
     });
-}
-
-/** ポップアップではなくリダイレクトでログインすべきか */
-export function shouldUseRedirectSignIn(win = globalThis) {
-    return isStandaloneDisplay(win);
 }
 
 /**

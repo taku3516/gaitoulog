@@ -9,9 +9,9 @@
 //   - 追加スコープは要求しない（Googleの基本プロフィールのみ）。
 //   - 既定は非永続ログイン。Firestoreのブラウザ永続キャッシュも使わない。
 //   - 初回マージではクラウドの既存データを絶対に上書きしない。
-//   - ホーム画面のアプリ（PWA）ではポップアップが使えないためリダイレクトでログインする。
+//   - ログインはポップアップ方式。応答が無い・使えない場合だけリダイレクト方式へ切り替える。
 
-import { shouldUseRedirectSignIn, parsePendingRedirect } from './auth-environment.js';
+import { parsePendingRedirect } from './auth-environment.js';
 
 const CONFIG = window.GAITOULOG_FIREBASE_SYNC;
 const DEFAULT_SDK_VERSION = '12.16.0';
@@ -24,8 +24,21 @@ const SCHEMA_VERSION = 1;
 const REDIRECT_PENDING_KEY = 'streetActivityLog_pendingRedirect';
 
 const REDIRECT_INCOMPLETE_MESSAGE =
-    'ログインを完了できませんでした。ホーム画面のアプリでは、ブラウザの制限でログインできないことがあります。'
-    + 'SafariやChromeでアプリのページを開いてログインしてください。';
+    'ログインを完了できませんでした。お手数ですが、もう一度お試しください。';
+
+// ポップアップが開けない・使えない環境。この場合だけリダイレクト方式へ切り替える。
+const POPUP_FALLBACK_CODES = new Set([
+    'auth/popup-blocked',
+    'auth/operation-not-supported-in-this-environment',
+    'auth/web-storage-unsupported',
+]);
+
+// ポップアップからの応答をどれだけ待つか。過ぎたら案内を出し、次回は別方式で試す。
+// 白い画面のまま無限に待たせないための安全網（パスワード入力の時間も見込む）。
+const POPUP_TIMEOUT_MS = 30 * 1000;
+
+// 一度ポップアップが無反応だった端末では、次回からリダイレクト方式を使う
+let preferRedirect = false;
 
 // ---------- 状態 ----------
 
@@ -292,36 +305,78 @@ function googleProvider() {
     return provider;
 }
 
+/**
+ * 画面ごとGoogleへ移動する方式。ポップアップが使えないときだけ通る。
+ * 戻ってきたときの続きは completePendingRedirect が引き受ける。
+ */
+async function startRedirectSignIn(remember) {
+    const { signInWithRedirect, setPersistence, browserLocalPersistence } = sdk.auth;
+    // 移動の前後でページが作り直されるため、意図を残しておく
+    rememberRedirectIntent('signIn', remember);
+    // セッション保持のままだと復帰できない。「維持しない」設定は戻った時点で戻す。
+    await setPersistence(auth, browserLocalPersistence);
+    setState({ status: 'connecting', message: 'ログイン画面へ移動しています...' });
+    await signInWithRedirect(auth, googleProvider());
+}
+
+/**
+ * ポップアップの無反応を見張る。時間内に終わらなければ案内を出してボタンを戻し、
+ * 次回のログインはリダイレクト方式にする。遅れて成功した場合は
+ * onAuthStateChanged が状態を上書きするので邪魔にならない。
+ */
+function watchPopupResponse() {
+    const timer = setTimeout(() => {
+        preferRedirect = true;
+        setState({
+            busy: false,
+            status: 'error',
+            message: 'ログイン画面から応答がありません。もう一度「Googleでログイン」を押すと、別の方法で試します。',
+        });
+    }, POPUP_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+}
+
 async function signIn({ remember = false } = {}) {
     setState({ busy: true, message: '' });
     try {
         await ensureInitialized();
-        const { signInWithPopup, signInWithRedirect, setPersistence,
+        const { signInWithPopup, setPersistence,
                 browserLocalPersistence, browserSessionPersistence } = sdk.auth;
 
-        if (shouldUseRedirectSignIn(window)) {
-            // ホーム画面のアプリではポップアップが結果を返せず白い画面のまま止まる。
-            // 画面ごとGoogleへ移動し、戻ってきてから続きを処理する。
-            rememberRedirectIntent('signIn', remember);
-            // 移動の前後でページが作り直されるため、セッション保持のままだと復帰できない。
-            // 「維持しない」設定は戻ってきた時点でセッション保持へ移し替える。
-            await setPersistence(auth, browserLocalPersistence);
-            setState({ status: 'connecting', message: 'ログイン画面へ移動しています...' });
-            await signInWithRedirect(auth, googleProvider());
+        if (preferRedirect) {
+            await startRedirectSignIn(remember);
             return; // ここでこのページを離れる
         }
 
         await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
-        await signInWithPopup(auth, googleProvider());
-        // 以降の処理は onAuthStateChanged に集約されている
+        const stopWatching = watchPopupResponse();
+        try {
+            await signInWithPopup(auth, googleProvider());
+            // 以降の処理は onAuthStateChanged に集約されている
+        } finally {
+            stopWatching();
+        }
     } catch (error) {
         clearRedirectIntent();
         if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
             setState({ status: 'idle', message: 'ログインがキャンセルされました。' });
-        } else {
-            console.error('ログインに失敗しました:', error);
-            setState({ status: 'error', message: describeAuthError(error) });
+            return;
         }
+        if (POPUP_FALLBACK_CODES.has(error?.code)) {
+            // ポップアップを開けない環境。画面ごと移動する方式へ切り替える。
+            console.warn('ポップアップが使えないため、リダイレクト方式に切り替えます:', error?.code);
+            preferRedirect = true;
+            try {
+                await startRedirectSignIn(remember);
+                return;
+            } catch (redirectError) {
+                console.error('リダイレクト方式も開始できません:', redirectError);
+                setState({ status: 'error', message: describeAuthError(redirectError) });
+                return;
+            }
+        }
+        console.error('ログインに失敗しました:', error);
+        setState({ status: 'error', message: describeAuthError(error) });
     } finally {
         setState({ busy: false });
     }
@@ -687,9 +742,13 @@ async function deleteAccountAndData() {
 
         const { reauthenticateWithPopup, reauthenticateWithRedirect, setPersistence, browserLocalPersistence } = sdk.auth;
 
-        if (shouldUseRedirectSignIn(window)) {
-            // ホーム画面のアプリではポップアップで再確認できないため、画面ごと移動する。
+        try {
+            await reauthenticateWithPopup(user, googleProvider());
+        } catch (error) {
+            if (!POPUP_FALLBACK_CODES.has(error?.code)) throw error;
+            // ポップアップで再確認できない環境。画面ごと移動し、
             // 戻ってきたら resumeAccountDeletion が続きを引き受ける。
+            console.warn('ポップアップが使えないため、リダイレクト方式に切り替えます:', error?.code);
             rememberRedirectIntent('deleteAccount', false);
             await setPersistence(auth, browserLocalPersistence);
             setState({ status: 'connecting', message: '確認のためログイン画面へ移動しています...' });
@@ -697,7 +756,6 @@ async function deleteAccountAndData() {
             return; // ここでこのページを離れる
         }
 
-        await reauthenticateWithPopup(user, googleProvider());
         await performAccountDeletion(user);
     } catch (error) {
         clearRedirectIntent();
