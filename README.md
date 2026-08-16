@@ -77,6 +77,7 @@ node --test js/sync/auth-environment.test.mjs
 | `data/` | 地域データと公開可能なFirebase Web設定 |
 | `firebase/` | Firestoreのルールとインデックス |
 | `firebase.json` / `.firebaserc` | Firebase Hostingへの公開設定 |
+| `pages-notice/` | 旧URL（GitHub Pages）に出す移転案内 |
 | `docs/` | 導入・運用ガイド |
 | `scripts/` | 設定検査と秘密情報検査 |
 | `SECURITY.md` | 秘密情報・個人情報の取り扱い方針 |
@@ -90,5 +91,5 @@ Googleログインを成立させるには、アプリの公開ドメインと `
 firebase deploy --only hosting
 ```
 
-GitHub Pages（`taku3516.github.io/gaitoulog/`）への自動公開も当面は残していますが、
-そちらではホーム画面のアプリからGoogleログインを完了できません。
+旧URL（`taku3516.github.io/gaitoulog/`）は、`pages-notice/` の移転案内だけを配信します
+（GitHub Actionsで自動）。そちらではホーム画面のアプリからGoogleログインを完了できないためです。

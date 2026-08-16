@@ -33,7 +33,6 @@ function originLine() {
     const mode = standalone ? 'ホーム画面のアプリ' : 'ブラウザ';
     return `<p class="text-xs text-muted" style="margin: 10px 0 0;">
         接続先: ${escapeHtml(location.hostname)}（${mode}）
-        ・<a href="./login-check.html">ログイン診断</a>
     </p>`;
 }
 
