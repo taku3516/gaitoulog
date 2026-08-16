@@ -33,3 +33,6 @@ backups/
 
 # 一時的なジオコーディング候補（確定座標は data/spot-coordinates.js）
 data/spot-geocode-review.json
+
+# Firebase CLI のデプロイ作業キャッシュ
+.firebase/
