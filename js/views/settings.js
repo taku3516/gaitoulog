@@ -22,6 +22,20 @@ function cloud() {
     return window.GAITOULOG_CLOUD;
 }
 
+/**
+ * 接続先の表示。ホーム画面のアプリはURLバーが隠れるため、
+ * どのドメインで動いているかを画面から確認できるようにしておく。
+ * ログインの不具合はこの違いが原因になりやすい。
+ */
+function originLine() {
+    const standalone = window.matchMedia?.('(display-mode: standalone)')?.matches
+        || window.navigator.standalone === true;
+    const mode = standalone ? 'ホーム画面のアプリ' : 'ブラウザ';
+    return `<p class="text-xs text-muted" style="margin: 10px 0 0;">
+        接続先: ${escapeHtml(location.hostname)}（${mode}）
+    </p>`;
+}
+
 const STATUS_TEXT = {
     idle: '',
     connecting: '接続しています…',
@@ -208,6 +222,7 @@ export async function render(container, { onAccountsChanged } = {}) {
                         ログインは任意です。ログインしない場合も、これまでどおりこの端末だけで利用できます。
                         Gmailやドライブなど、他のGoogleサービスへのアクセス権は要求しません。
                     </p>
+                    ${originLine()}
                 </div>
             `;
         } else {
@@ -225,6 +240,7 @@ export async function render(container, { onAccountsChanged } = {}) {
                         ログアウトすると、この端末はログイン前の記録に戻ります。
                         クラウド上のデータは残り、次にログインしたときに再び同期されます。
                     </p>
+                    ${originLine()}
                 </div>
 
                 <div class="card">

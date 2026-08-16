@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>街頭活動ログは移転しました</title>
+    <meta name="robots" content="noindex" />
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+               margin: 0; padding: 24px 18px; background: #e6eef4; color: #1b2733; line-height: 1.9; }
+        .box { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 22px; }
+        h1 { font-size: 19px; margin: 0 0 14px; }
+        p { font-size: 14px; margin: 0 0 14px; }
+        .go { display: block; text-align: center; background: #5081b5; color: #fff; font-weight: 700;
+              text-decoration: none; padding: 15px; border-radius: 10px; margin: 18px 0; font-size: 16px; }
+        ol { font-size: 14px; padding-left: 1.3em; margin: 0 0 14px; }
+        .note { font-size: 12px; color: #52616f; }
+        code { background: #eef3f8; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>街頭活動ログは移転しました</h1>
+
+        <p id="lead">
+            新しいURLはこちらです。ブックマークはこちらに変更してください。
+        </p>
+
+        <a class="go" href="https://gaitoulog.firebaseapp.com/">新しい街頭活動ログを開く</a>
+
+        <p>
+            <strong>ホーム画面に追加して使っている場合</strong>は、次の手順をお願いします。
+        </p>
+        <ol>
+            <li>この古いアイコンを削除する</li>
+            <li>上のボタンから新しいページを開く</li>
+            <li>共有メニューから「ホーム画面に追加」する</li>
+        </ol>
+
+        <p class="note">
+            移転の理由: 旧URL（GitHub Pages）では、ホーム画面のアプリからGoogleログインを
+            完了できませんでした。アプリと認証ページを同じドメインにそろえる必要があるためです。
+        </p>
+        <p class="note">
+            記録の保存場所はURLごとに分かれています。旧URLに入力した記録がまだ必要な場合は、
+            <code>docs/firebase-sync-setup.md</code> を参照するか、管理者にご連絡ください。
+        </p>
+    </div>
+
+    <script>
+        const NEW_URL = 'https://gaitoulog.firebaseapp.com/';
+
+        // 旧サイトのService Workerを解除し、キャッシュも消す。
+        // これを残すと、古いアプリがアプリとして起動し続けてしまう。
+        // 入力済みの記録（localStorage）には触れない。
+        const cleanUp = Promise.allSettled([
+            navigator.serviceWorker?.getRegistrations?.()
+                .then(registrations => Promise.all(registrations.map(r => r.unregister()))),
+            caches?.keys?.().then(keys => Promise.all(keys.map(key => caches.delete(key)))),
+        ]);
+
+        // ホーム画面のアプリとして開かれた場合は自動転送しない。
+        // 別ドメインへ飛ぶとアプリの枠から外れてしまい、
+        // 「アイコンを削除して追加し直す」という肝心の案内を読めなくなるため。
+        const standalone = window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+
+        if (!standalone) {
+            document.getElementById('lead').textContent = '新しいURLへ移動しています…';
+            // 解除を待ってから移動する。history に旧URLを残さないよう replace を使う。
+            cleanUp.then(() => setTimeout(() => location.replace(NEW_URL), 400));
+        }
+    </script>
+</body>
+</html>

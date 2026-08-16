@@ -30,10 +30,13 @@ jobs:
         with:
           enablement: true
 
-      - name: Upload site
+      # アプリ本体の公開先は Firebase Hosting（gaitoulog.firebaseapp.com）へ移した。
+      # 旧URLでは、ホーム画面のアプリからGoogleログインを完了できないため。
+      # ここでは移転の案内だけを配信する。
+      - name: Upload notice page
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: ./pages-notice
 
       - name: Deploy
         id: deployment

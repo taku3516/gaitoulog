@@ -214,25 +214,38 @@ Firestore に保存されるのは、活動記録そのもの（日時・場所�
 
 ## ホーム画面に追加したアプリ（PWA）でのログイン
 
-ホーム画面から起動したアプリでは、ポップアップでのログインが完了できません。
-ポップアップが元の画面へ結果を返せず、白い画面のまま止まります。
-そのため、アプリとして起動しているときは自動的に**リダイレクト方式**（画面ごとGoogleへ移動し、
-終わったらアプリへ戻る）に切り替わります。判定は `js/sync/auth-environment.js` にあります。
+ログインは**ポップアップ方式**です。これはホーム画面から起動したアプリでも動きますが、
+**アプリと認証ページが同じドメインであること**が条件になります。別ドメインだと、
+ポップアップが元の画面へ結果を返せず、白い画面のまま止まります（2026-08-16に実際に発生）。
 
-### 残っている制限
+安全網として、ポップアップから30秒応答が無い場合と、ポップアップ自体を開けない場合
+（`auth/popup-blocked` など）は、**リダイレクト方式**（画面ごとGoogleへ移動して戻る）へ切り替えます。
+ただしリダイレクト方式にも下記の制約があるため、あくまで代替手段です。
 
-リダイレクト方式は、Firebase の認証ページ（`gaitoulog.firebaseapp.com`）とアプリの公開ドメイン
-（`taku3516.github.io`）が別ドメインのため、**第三者ストレージを遮断するブラウザでは失敗することがあります**
+### 公開ドメインを `authDomain` とそろえること（重要）
+
+リダイレクト方式は、戻ってきたあとに認証ドメイン側へ「さきほどの認証結果」を取りに行きます。
+アプリと認証ドメインが別だと、**第三者ストレージを遮断するブラウザがこの受け渡しを遮ります**
 （Safari 16.1以降、Firefox 109以降、Chrome M115以降の一部設定）。
-この場合はログインできなかった旨のメッセージが表示されます。白い画面で止まることはありません。
+実際に GitHub Pages（`taku3516.github.io`）ではログインを完了できませんでした。
 
-確実に解消するには、認証ページとアプリを同じドメインにそろえる必要があります。
+そのため、公開先を Firebase Hosting に移し、**アプリのURLと `authDomain` を
+`gaitoulog.firebaseapp.com` にそろえてあります**。同一ドメインなら受け渡しが発生しないため、
+ホーム画面のアプリでもログインできます。
 
-1. アプリを Firebase Hosting（`gaitoulog.web.app` など）へ公開し、`authDomain` をその公開ドメインにする
-2. 独自ドメインを使い、`/__/auth/` への通信を `gaitoulog.firebaseapp.com` へ中継する
+- 公開: `firebase deploy --only hosting`（設定は `firebase.json`）
+- 公開URL: <https://gaitoulog.firebaseapp.com/>
 
-GitHub Pages は中継ができないため、1 の方法が現実的です。
-詳しくは [Firebase の解説](https://firebase.google.com/docs/auth/web/redirect-best-practices) を参照してください。
+なお、リダイレクト方式は Firebase SDK が「リダイレクト中」の印を **sessionStorage** に置く仕組みです
+（`_redirectPersistence`）。端末がログイン中にアプリを終了させるなどして sessionStorage が失われると、
+戻ってきても資格情報を受け取れません。この方式を主役にできないのはこのためです。
+
+`gaitoulog.web.app` でも同じサイトが見えますが、そちらを正式なURLにする場合は
+Google Cloud のOAuthクライアントに `https://gaitoulog.web.app/__/auth/handler` を
+リダイレクトURIとして追加登録する必要があります（未登録だと `redirect_uri_mismatch` になります）。
+`authDomain` を変えるときは、必ずアプリのURLも一緒に変えてください。
+
+背景は [Firebase の解説](https://firebase.google.com/docs/auth/web/redirect-best-practices) を参照してください。
 
 ---
 
@@ -244,7 +257,8 @@ GitHub Pages は中継ができないため、1 の方法が現実的です。
 | `auth/unauthorized-domain` | 手順3の承認済みドメインに公開URLのホスト名を追加したか |
 | ログイン画面が出ない | ブラウザのポップアップブロックを解除したか |
 | ホーム画面のアプリでログインが白いまま進まない | 上の「ホーム画面に追加したアプリ（PWA）でのログイン」を参照。古いキャッシュが残っている場合は、アプリを一度削除してから追加し直す |
-| ホーム画面のアプリで「ログインを完了できませんでした」と出る | ブラウザの制限。SafariやChromeで同じページを開いてログインする（Androidではアプリ側にも引き継がれます） |
+| ホーム画面のアプリで「ログインを完了できませんでした」と出る | 旧URL（`taku3516.github.io/gaitoulog/`）で開いていないか。<https://gaitoulog.firebaseapp.com/> から追加し直す |
+| `redirect_uri_mismatch` と出る | `data/firebase-config.js` の `authDomain` と、実際に開いているURLのドメインが一致しているか |
 | `Missing or insufficient permissions` | 手順5のルールを「公開」したか |
 | 記録が同期されない | ブラウザの開発者ツールのコンソールにエラーが出ていないか |
 | 取り込んだ記録がすぐ消える／「保存が拒否されました」と出る | ルールが古い可能性。`node scripts/check-firebase-config.mjs` を実行し、手順5でルールを公開し直す |

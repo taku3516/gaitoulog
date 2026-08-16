@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 
 import {
     isStandaloneDisplay,
-    shouldUseRedirectSignIn,
     parsePendingRedirect,
     REDIRECT_MAX_AGE_MS,
 } from './auth-environment.js';
@@ -20,16 +19,14 @@ function fakeWindow({ iosStandalone = undefined, displayMode = null, matchMedia 
     };
 }
 
-test('ブラウザのタブではリダイレクトを使わない', () => {
+test('ブラウザのタブはアプリ起動として扱わない', () => {
     const win = fakeWindow({ iosStandalone: false, displayMode: 'browser' });
     assert.equal(isStandaloneDisplay(win), false);
-    assert.equal(shouldUseRedirectSignIn(win), false);
 });
 
 test('iOSのホーム画面アプリを検出する', () => {
     const win = fakeWindow({ iosStandalone: true, displayMode: 'browser' });
     assert.equal(isStandaloneDisplay(win), true);
-    assert.equal(shouldUseRedirectSignIn(win), true);
 });
 
 test('display-mode: standalone のPWAを検出する', () => {
