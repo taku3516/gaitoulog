@@ -10,6 +10,8 @@
 //   - 既定は非永続ログイン。Firestoreのブラウザ永続キャッシュも使わない。
 //   - 初回マージではクラウドの既存データを絶対に上書きしない。
 //   - ログインはポップアップ方式。応答が無い・使えない場合だけリダイレクト方式へ切り替える。
+//   - ポップアップは「タップと同じ処理の流れ」の中で開くこと。間に await を挟むと
+//     iOS Safari が中身を読み込ませず、白い画面のまま止まる（signIn のコメント参照）。
 
 import { parsePendingRedirect } from './auth-environment.js';
 
@@ -336,50 +338,75 @@ function watchPopupResponse() {
     return () => clearTimeout(timer);
 }
 
-async function signIn({ remember = false } = {}) {
-    setState({ busy: true, message: '' });
-    try {
-        await ensureInitialized();
-        const { signInWithPopup, setPersistence,
-                browserLocalPersistence, browserSessionPersistence } = sdk.auth;
+/**
+ * ログイン後に保持方式を整える。
+ * ポップアップより先に setPersistence を呼べないため（下記 signIn 参照）、ここで行う。
+ * 今のログインは新しい保存先へ引き継がれる。
+ */
+async function applyPersistence(remember) {
+    const { setPersistence, browserLocalPersistence, browserSessionPersistence } = sdk.auth;
+    await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
+}
 
-        if (preferRedirect) {
-            await startRedirectSignIn(remember);
-            return; // ここでこのページを離れる
-        }
-
-        await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
-        const stopWatching = watchPopupResponse();
-        try {
-            await signInWithPopup(auth, googleProvider());
-            // 以降の処理は onAuthStateChanged に集約されている
-        } finally {
-            stopWatching();
-        }
-    } catch (error) {
-        clearRedirectIntent();
-        if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-            setState({ status: 'idle', message: 'ログインがキャンセルされました。' });
-            return;
-        }
-        if (POPUP_FALLBACK_CODES.has(error?.code)) {
-            // ポップアップを開けない環境。画面ごと移動する方式へ切り替える。
-            console.warn('ポップアップが使えないため、リダイレクト方式に切り替えます:', error?.code);
-            preferRedirect = true;
-            try {
-                await startRedirectSignIn(remember);
-                return;
-            } catch (redirectError) {
-                console.error('リダイレクト方式も開始できません:', redirectError);
-                setState({ status: 'error', message: describeAuthError(redirectError) });
-                return;
-            }
-        }
-        console.error('ログインに失敗しました:', error);
-        setState({ status: 'error', message: describeAuthError(error) });
-    } finally {
-        setState({ busy: false });
+/**
+ * ログインを始める。
+ *
+ * ここは async にしない。iOS Safari は「タップと同じ処理の流れの中で開かれた窓」しか
+ * 許さず、間に非同期処理を挟むと窓は開くのに中身を読み込めない（白い画面のまま止まる）。
+ * そのため signInWithPopup は await を一切挟まずに呼ぶ。
+ * 保持方式の設定はログイン後に回す。
+ */
+function signIn({ remember = false } = {}) {
+    if (!sdk || !state.ready) {
+        // 準備前にポップアップを開こうとしても遮断される。準備を促して案内するに留める。
+        setState({ status: 'connecting', message: '準備しています。数秒後にもう一度お試しください。' });
+        ensureInitialized().catch(() => { /* 失敗時の表示は ensureInitialized 側で行う */ });
+        return Promise.resolve();
     }
+
+    setState({ busy: true, message: '' });
+
+    if (preferRedirect) {
+        // 画面ごと移動する方式。タップとの結び付きは不要。
+        return startRedirectSignIn(remember)
+            .catch(error => handleSignInError(error, remember))
+            .finally(() => setState({ busy: false }));
+    }
+
+    const stopWatching = watchPopupResponse();
+    return sdk.auth.signInWithPopup(auth, googleProvider())
+        .then(() => applyPersistence(remember))
+        // 同期の続き（初回マージなど）は onAuthStateChanged に集約されている
+        .catch(error => handleSignInError(error, remember))
+        .finally(() => {
+            stopWatching();
+            setState({ busy: false });
+        });
+}
+
+async function handleSignInError(error, remember) {
+    clearRedirectIntent();
+
+    if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+        setState({ status: 'idle', message: 'ログインがキャンセルされました。' });
+        return;
+    }
+
+    if (POPUP_FALLBACK_CODES.has(error?.code)) {
+        // ポップアップを開けない環境。画面ごと移動する方式へ切り替える。
+        console.warn('ポップアップが使えないため、リダイレクト方式に切り替えます:', error?.code);
+        preferRedirect = true;
+        try {
+            await startRedirectSignIn(remember);
+        } catch (redirectError) {
+            console.error('リダイレクト方式も開始できません:', redirectError);
+            setState({ status: 'error', message: describeAuthError(redirectError) });
+        }
+        return;
+    }
+
+    console.error('ログインに失敗しました:', error);
+    setState({ status: 'error', message: describeAuthError(error) });
 }
 
 /** リダイレクトから戻ってきたときの続き。覚え書きが無ければ何もしない。 */
@@ -733,41 +760,54 @@ function spotsChanged(spots) {
 
 // ---------- データとアカウントの削除 ----------
 
-async function deleteAccountAndData() {
+/**
+ * アカウントとクラウド上のデータを削除する。
+ * signIn と同じ理由で async にしない（ポップアップはタップと同じ流れで開く必要がある）。
+ */
+function deleteAccountAndData() {
+    if (!sdk || !state.ready) {
+        setState({ status: 'connecting', message: '準備しています。数秒後にもう一度お試しください。' });
+        ensureInitialized().catch(() => { /* 表示は ensureInitialized 側で行う */ });
+        return Promise.resolve();
+    }
+
+    const user = auth.currentUser;
+    if (!user) return Promise.resolve();
+
     setState({ busy: true, message: '' });
-    try {
-        await ensureInitialized();
-        const user = auth.currentUser;
-        if (!user) return;
+    return sdk.auth.reauthenticateWithPopup(user, googleProvider())
+        .then(() => performAccountDeletion(user))
+        .catch(error => handleDeletionError(error, user))
+        .finally(() => setState({ busy: false }));
+}
 
-        const { reauthenticateWithPopup, reauthenticateWithRedirect, setPersistence, browserLocalPersistence } = sdk.auth;
+async function handleDeletionError(error, user) {
+    clearRedirectIntent();
 
+    if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+        setState({ status: 'idle', message: '削除がキャンセルされました。' });
+        return;
+    }
+
+    if (POPUP_FALLBACK_CODES.has(error?.code)) {
+        // ポップアップで再確認できない環境。画面ごと移動し、
+        // 戻ってきたら resumeAccountDeletion が続きを引き受ける。
+        console.warn('ポップアップが使えないため、リダイレクト方式に切り替えます:', error?.code);
+        const { reauthenticateWithRedirect, setPersistence, browserLocalPersistence } = sdk.auth;
         try {
-            await reauthenticateWithPopup(user, googleProvider());
-        } catch (error) {
-            if (!POPUP_FALLBACK_CODES.has(error?.code)) throw error;
-            // ポップアップで再確認できない環境。画面ごと移動し、
-            // 戻ってきたら resumeAccountDeletion が続きを引き受ける。
-            console.warn('ポップアップが使えないため、リダイレクト方式に切り替えます:', error?.code);
             rememberRedirectIntent('deleteAccount', false);
             await setPersistence(auth, browserLocalPersistence);
             setState({ status: 'connecting', message: '確認のためログイン画面へ移動しています...' });
             await reauthenticateWithRedirect(user, googleProvider());
-            return; // ここでこのページを離れる
-        }
-
-        await performAccountDeletion(user);
-    } catch (error) {
-        clearRedirectIntent();
-        if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-            setState({ status: 'idle', message: '削除がキャンセルされました。' });
-        } else {
-            console.error('アカウント削除に失敗しました:', error);
+        } catch (redirectError) {
+            console.error('再確認へ進めませんでした:', redirectError);
             setState({ status: 'error', message: 'アカウントの削除に失敗しました。' });
         }
-    } finally {
-        setState({ busy: false });
+        return;
     }
+
+    console.error('アカウント削除に失敗しました:', error);
+    setState({ status: 'error', message: 'アカウントの削除に失敗しました。' });
 }
 
 /**
