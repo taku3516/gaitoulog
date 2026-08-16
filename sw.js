@@ -1,4 +1,4 @@
-const CACHE_NAME = 'street-activity-log-v19';
+const CACHE_NAME = 'street-activity-log-v20';
 
 // 認証・API通信はキャッシュしない（トークン付きの応答を残さないため）
 const NO_CACHE_HOSTS = [
@@ -8,8 +8,15 @@ const NO_CACHE_HOSTS = [
     'identitytoolkit.googleapis.com',
     'securetoken.googleapis.com',
     'firestore.googleapis.com',
+    'apis.google.com',
     'tile.openstreetmap.org',
 ];
+
+// Firebase のログイン用ページ（リダイレクト方式で経由する）もキャッシュしない。
+// 古い応答を返すとログインが完了しなくなる。
+function isAuthTraffic(url) {
+    return url.hostname.endsWith('.firebaseapp.com') || url.pathname.startsWith('/__/auth/');
+}
 
 const STATIC_ASSETS = [
     './',
@@ -41,6 +48,7 @@ const STATIC_ASSETS = [
     './js/views/settings.js',
     './js/sync/bridge.js',
     './js/sync/app-sync.js',
+    './js/sync/auth-environment.js',
     './data/firebase-config.js',
     './data/spot-coordinates.js',
     './assets/icons/icon.svg'
@@ -58,7 +66,9 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
-    const cacheable = event.request.method === 'GET' && !NO_CACHE_HOSTS.includes(url.hostname);
+    const cacheable = event.request.method === 'GET'
+        && !NO_CACHE_HOSTS.includes(url.hostname)
+        && !isAuthTraffic(url);
 
     if (!cacheable) return; // ブラウザ既定の処理に任せる
 

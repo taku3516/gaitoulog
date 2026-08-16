@@ -28,6 +28,9 @@ jobs:
       - name: Test the scanner
         run: node --test scripts/check-sensitive-data.test.mjs
 
+      - name: Test the sign-in method detection
+        run: node --test js/sync/auth-environment.test.mjs
+
       - name: Scan current files
         run: node scripts/check-sensitive-data.mjs
 
