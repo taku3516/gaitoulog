@@ -9,6 +9,9 @@
 //   - 追加スコープは要求しない（Googleの基本プロフィールのみ）。
 //   - 既定は非永続ログイン。Firestoreのブラウザ永続キャッシュも使わない。
 //   - 初回マージではクラウドの既存データを絶対に上書きしない。
+//   - ホーム画面のアプリ（PWA）ではポップアップが使えないためリダイレクトでログインする。
+
+import { shouldUseRedirectSignIn, parsePendingRedirect } from './auth-environment.js';
 
 const CONFIG = window.GAITOULOG_FIREBASE_SYNC;
 const DEFAULT_SDK_VERSION = '12.16.0';
@@ -16,6 +19,13 @@ const SDK_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 const BATCH_LIMIT = 400;
 const WRITE_DEBOUNCE_MS = 500;
 const SCHEMA_VERSION = 1;
+
+// リダイレクト方式では画面が作り直されるため、「何のために出ていったか」を残しておく
+const REDIRECT_PENDING_KEY = 'streetActivityLog_pendingRedirect';
+
+const REDIRECT_INCOMPLETE_MESSAGE =
+    'ログインを完了できませんでした。ホーム画面のアプリでは、ブラウザの制限でログインできないことがあります。'
+    + 'SafariやChromeでアプリのページを開いてログインしてください。';
 
 // ---------- 状態 ----------
 
@@ -229,6 +239,8 @@ async function ensureInitialized() {
         await initAppCheck(sdk.base);
         sdk.auth.onAuthStateChanged(auth, handleAuthStateChanged);
         setState({ ready: true, status: 'idle', message: '' });
+        // リダイレクトでログインした場合は、戻ってきたこの時点が続きの入口になる
+        await completePendingRedirect();
     })().catch(err => {
         initPromise = null;
         console.error('Firebase の初期化に失敗しました:', err);
@@ -244,28 +256,105 @@ function bridge() {
     return window.GAITOULOG_SYNC_BRIDGE;
 }
 
+/** リダイレクトで出ていく前に、戻ってきたときのための覚え書きを残す */
+function rememberRedirectIntent(purpose, remember) {
+    try {
+        localStorage.setItem(REDIRECT_PENDING_KEY, JSON.stringify({ purpose, remember, startedAt: Date.now() }));
+    } catch (error) {
+        console.warn('リダイレクトの記録に失敗しました:', error);
+    }
+}
+
+function clearRedirectIntent() {
+    try {
+        localStorage.removeItem(REDIRECT_PENDING_KEY);
+    } catch (error) {
+        console.warn('リダイレクト記録の削除に失敗しました:', error);
+    }
+}
+
+/** 覚え書きを読み出して消す。二重に処理しないよう、読んだ時点で必ず消す。 */
+function takeRedirectIntent() {
+    let raw = null;
+    try {
+        raw = localStorage.getItem(REDIRECT_PENDING_KEY);
+    } catch (error) {
+        console.warn('リダイレクト記録の読み出しに失敗しました:', error);
+    }
+    clearRedirectIntent();
+    return parsePendingRedirect(raw);
+}
+
+/** ログイン用のプロバイダ。追加スコープは要求しない（既定の基本プロフィールのみ）。 */
+function googleProvider() {
+    const provider = new sdk.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    return provider;
+}
+
 async function signIn({ remember = false } = {}) {
     setState({ busy: true, message: '' });
     try {
         await ensureInitialized();
-        const { GoogleAuthProvider, signInWithPopup, setPersistence,
+        const { signInWithPopup, signInWithRedirect, setPersistence,
                 browserLocalPersistence, browserSessionPersistence } = sdk.auth;
 
+        if (shouldUseRedirectSignIn(window)) {
+            // ホーム画面のアプリではポップアップが結果を返せず白い画面のまま止まる。
+            // 画面ごとGoogleへ移動し、戻ってきてから続きを処理する。
+            rememberRedirectIntent('signIn', remember);
+            // 移動の前後でページが作り直されるため、セッション保持のままだと復帰できない。
+            // 「維持しない」設定は戻ってきた時点でセッション保持へ移し替える。
+            await setPersistence(auth, browserLocalPersistence);
+            setState({ status: 'connecting', message: 'ログイン画面へ移動しています...' });
+            await signInWithRedirect(auth, googleProvider());
+            return; // ここでこのページを離れる
+        }
+
         await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
-
-        const provider = new GoogleAuthProvider();
-        // 追加スコープは要求しない（既定の基本プロフィールのみ）
-        provider.setCustomParameters({ prompt: 'select_account' });
-
-        await signInWithPopup(auth, provider);
+        await signInWithPopup(auth, googleProvider());
         // 以降の処理は onAuthStateChanged に集約されている
     } catch (error) {
+        clearRedirectIntent();
         if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
             setState({ status: 'idle', message: 'ログインがキャンセルされました。' });
         } else {
             console.error('ログインに失敗しました:', error);
             setState({ status: 'error', message: describeAuthError(error) });
         }
+    } finally {
+        setState({ busy: false });
+    }
+}
+
+/** リダイレクトから戻ってきたときの続き。覚え書きが無ければ何もしない。 */
+async function completePendingRedirect() {
+    const intent = takeRedirectIntent();
+    if (!intent) return;
+
+    setState({ busy: true });
+    try {
+        const result = await sdk.auth.getRedirectResult(auth);
+        const user = result?.user || auth.currentUser;
+        if (!user) {
+            // 資格情報を取り戻せなかった。ブラウザが第三者ストレージを遮断していると起こる。
+            setState({ status: 'error', message: REDIRECT_INCOMPLETE_MESSAGE });
+            return;
+        }
+
+        // 「ログイン状態を維持しない」を選んでいた場合は、ここでセッション保持へ移す。
+        // 現在のログインはそのまま引き継がれ、端末には残らない。
+        if (!intent.remember) {
+            await sdk.auth.setPersistence(auth, sdk.auth.browserSessionPersistence);
+        }
+
+        if (intent.purpose === 'deleteAccount') {
+            await resumeAccountDeletion(user);
+        }
+        // ログインの続き（同期の開始）は onAuthStateChanged に集約されている
+    } catch (error) {
+        console.error('ログインの復帰に失敗しました:', error);
+        setState({ status: 'error', message: describeAuthError(error) });
     } finally {
         setState({ busy: false });
     }
@@ -279,6 +368,9 @@ function describeAuthError(error) {
             return 'このドメインが Firebase の承認済みドメインに登録されていません。';
         case 'auth/network-request-failed':
             return 'ネットワークに接続できませんでした。';
+        case 'auth/operation-not-supported-in-this-environment':
+        case 'auth/web-storage-unsupported':
+            return REDIRECT_INCOMPLETE_MESSAGE;
         default:
             return 'ログインに失敗しました。時間をおいて再度お試しください。';
     }
@@ -593,28 +685,22 @@ async function deleteAccountAndData() {
         const user = auth.currentUser;
         if (!user) return;
 
-        const { GoogleAuthProvider, reauthenticateWithPopup, deleteUser } = sdk.auth;
-        const { collection, getDocs, writeBatch } = sdk.store;
+        const { reauthenticateWithPopup, reauthenticateWithRedirect, setPersistence, browserLocalPersistence } = sdk.auth;
 
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        await reauthenticateWithPopup(user, provider);
-
-        stopListeners();
-
-        for (const path of ['records', 'politicians', 'spots']) {
-            const snapshot = await getDocs(collection(db, 'users', user.uid, path));
-            const docs = snapshot.docs;
-            for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
-                const batch = writeBatch(db);
-                docs.slice(i, i + BATCH_LIMIT).forEach(d => batch.delete(d.ref));
-                await batch.commit();
-            }
+        if (shouldUseRedirectSignIn(window)) {
+            // ホーム画面のアプリではポップアップで再確認できないため、画面ごと移動する。
+            // 戻ってきたら resumeAccountDeletion が続きを引き受ける。
+            rememberRedirectIntent('deleteAccount', false);
+            await setPersistence(auth, browserLocalPersistence);
+            setState({ status: 'connecting', message: '確認のためログイン画面へ移動しています...' });
+            await reauthenticateWithRedirect(user, googleProvider());
+            return; // ここでこのページを離れる
         }
 
-        await deleteUser(user);
-        window.location.reload();
+        await reauthenticateWithPopup(user, googleProvider());
+        await performAccountDeletion(user);
     } catch (error) {
+        clearRedirectIntent();
         if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
             setState({ status: 'idle', message: '削除がキャンセルされました。' });
         } else {
@@ -624,6 +710,45 @@ async function deleteAccountAndData() {
     } finally {
         setState({ busy: false });
     }
+}
+
+/**
+ * リダイレクトによる再確認から戻ってきたときの削除の続き。
+ * 画面が作り直されて操作の文脈が失われているため、実行前にもう一度確認する。
+ */
+async function resumeAccountDeletion(user) {
+    const message = 'クラウド上のすべてのデータとアカウントを削除します。\nこの操作は取り消せません。続行しますか？';
+    if (!window.confirm(message)) {
+        setState({ status: 'idle', message: '削除がキャンセルされました。' });
+        return;
+    }
+    try {
+        await performAccountDeletion(user);
+    } catch (error) {
+        console.error('アカウント削除に失敗しました:', error);
+        setState({ status: 'error', message: 'アカウントの削除に失敗しました。' });
+    }
+}
+
+/** クラウド上のデータとアカウントを実際に消す。再認証が済んでいることが前提。 */
+async function performAccountDeletion(user) {
+    const { deleteUser } = sdk.auth;
+    const { collection, getDocs, writeBatch } = sdk.store;
+
+    stopListeners();
+
+    for (const path of ['records', 'politicians', 'spots']) {
+        const snapshot = await getDocs(collection(db, 'users', user.uid, path));
+        const docs = snapshot.docs;
+        for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
+            const batch = writeBatch(db);
+            docs.slice(i, i + BATCH_LIMIT).forEach(d => batch.delete(d.ref));
+            await batch.commit();
+        }
+    }
+
+    await deleteUser(user);
+    window.location.reload();
 }
 
 // ---------- 起動 ----------

@@ -59,6 +59,7 @@ node scripts/check-sensitive-data.mjs
 node scripts/check-sensitive-data.mjs --history
 node scripts/check-firebase-config.mjs
 node --test scripts/check-sensitive-data.test.mjs
+node --test js/sync/auth-environment.test.mjs
 ```
 
 検査で問題が見つかった場合は、値を削除しただけで公開済みとは限りません。[SECURITY.md](SECURITY.md)に従い、該当する認証情報の失効・再発行も行ってください。
