@@ -22,7 +22,7 @@
     <div class="box">
         <h1>街頭活動ログは移転しました</h1>
 
-        <p>
+        <p id="lead">
             新しいURLはこちらです。ブックマークはこちらに変更してください。
         </p>
 
@@ -48,16 +48,28 @@
     </div>
 
     <script>
+        const NEW_URL = 'https://gaitoulog.firebaseapp.com/';
+
         // 旧サイトのService Workerを解除し、キャッシュも消す。
         // これを残すと、古いアプリがアプリとして起動し続けてしまう。
         // 入力済みの記録（localStorage）には触れない。
-        navigator.serviceWorker?.getRegistrations?.()
-            .then(registrations => registrations.forEach(registration => registration.unregister()))
-            .catch(() => { /* 解除できなくても案内は表示する */ });
+        const cleanUp = Promise.allSettled([
+            navigator.serviceWorker?.getRegistrations?.()
+                .then(registrations => Promise.all(registrations.map(r => r.unregister()))),
+            caches?.keys?.().then(keys => Promise.all(keys.map(key => caches.delete(key)))),
+        ]);
 
-        caches?.keys?.()
-            .then(keys => keys.forEach(key => caches.delete(key)))
-            .catch(() => { /* 同上 */ });
+        // ホーム画面のアプリとして開かれた場合は自動転送しない。
+        // 別ドメインへ飛ぶとアプリの枠から外れてしまい、
+        // 「アイコンを削除して追加し直す」という肝心の案内を読めなくなるため。
+        const standalone = window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+
+        if (!standalone) {
+            document.getElementById('lead').textContent = '新しいURLへ移動しています…';
+            // 解除を待ってから移動する。history に旧URLを残さないよう replace を使う。
+            cleanUp.then(() => setTimeout(() => location.replace(NEW_URL), 400));
+        }
     </script>
 </body>
 </html>
