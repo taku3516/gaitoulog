@@ -2,7 +2,11 @@
 
 品川区での街頭演説・街頭活動を記録し、振り返りや次回の活動計画に役立てるためのWebアプリ（PWA）です。
 
-**公開アプリ:** [街頭活動ログを開く](https://taku3516.github.io/gaitoulog/)
+**公開アプリ:** [街頭活動ログを開く](https://gaitoulog.firebaseapp.com/)
+
+> ホーム画面に追加して使う場合は、必ず上のURLから追加してください。
+> 旧URL（`taku3516.github.io/gaitoulog/`）のままだと、Googleログインが完了できません。理由は
+> [docs/firebase-sync-setup.md](docs/firebase-sync-setup.md) を参照してください。
 
 ## 主な機能
 
@@ -72,10 +76,19 @@ node --test js/sync/auth-environment.test.mjs
 | `js/` | 入力、保存、同期、集計などの処理 |
 | `data/` | 地域データと公開可能なFirebase Web設定 |
 | `firebase/` | Firestoreのルールとインデックス |
+| `firebase.json` / `.firebaserc` | Firebase Hostingへの公開設定 |
 | `docs/` | 導入・運用ガイド |
 | `scripts/` | 設定検査と秘密情報検査 |
 | `SECURITY.md` | 秘密情報・個人情報の取り扱い方針 |
 
 ## 公開
 
-`main` ブランチへの反映後、GitHub ActionsからGitHub Pagesへ自動公開されます。
+正式な公開先は Firebase Hosting（<https://gaitoulog.firebaseapp.com/>）です。
+Googleログインを成立させるには、アプリの公開ドメインと `authDomain` が同じである必要があるためです。
+
+```sh
+firebase deploy --only hosting
+```
+
+GitHub Pages（`taku3516.github.io/gaitoulog/`）への自動公開も当面は残していますが、
+そちらではホーム画面のアプリからGoogleログインを完了できません。
