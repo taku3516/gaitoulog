@@ -1,4 +1,4 @@
-const CACHE_NAME = 'street-activity-log-v20';
+const CACHE_NAME = 'street-activity-log-v21';
 
 // 認証・API通信はキャッシュしない（トークン付きの応答を残さないため）
 const NO_CACHE_HOSTS = [
@@ -24,6 +24,7 @@ const STATIC_ASSETS = [
     './manifest.json',
     './css/style.css',
     './js/app.js',
+    './js/theme.js',
     './js/store.js',
     './js/calculations.js',
     './js/dummy-data.js',

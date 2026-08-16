@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
   <title id="title">街頭活動ログ</title>
-  <rect width="512" height="512" rx="112" fill="#5081b5"/>
+  <rect width="512" height="512" rx="112" fill="#0017c1"/>
   <path d="M104 224h68l176-82v228l-176-82h-68z" fill="#fff"/>
-  <path d="M172 288l34 112h78l-48-89z" fill="#dbeafe"/>
+  <path d="M172 288l34 112h78l-48-89z" fill="#c5d7fb"/>
   <path d="M382 210c22 25 22 67 0 92M420 175c42 46 42 116 0 162" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round"/>
 </svg>

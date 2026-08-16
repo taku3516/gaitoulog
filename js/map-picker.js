@@ -1,6 +1,7 @@
 // ===== OpenStreetMap スポット選択・追加 =====
 
 import * as spotStore from './spot-store.js';
+import { COLOR } from './theme.js';
 
 const SHINAGAWA_CENTER = [35.6092, 139.7302];
 const FIXED_AREAS = ['品川', '大崎', '荏原', '大井', '八潮'];
@@ -192,7 +193,7 @@ export function openMapPicker({ onSelect, onSaved, manage = false, initialSpotId
         navigator.geolocation.getCurrentPosition(position => {
             const { latitude, longitude, accuracy } = position.coords;
             map.setView([latitude, longitude], 16);
-            leaflet.circle([latitude, longitude], { radius: Math.max(accuracy, 15), color: '#1f4d63', fillOpacity: .12 }).addTo(map);
+            leaflet.circle([latitude, longitude], { radius: Math.max(accuracy, 15), color: COLOR.accent, fillOpacity: .12 }).addTo(map);
             const nearby = spotStore.getAllSpots()
                 .filter(spot => Number.isFinite(spot.lat) && Number.isFinite(spot.lng))
                 .map(spot => ({ ...spot, distance: distanceMeters(latitude, longitude, spot.lat, spot.lng) }))
