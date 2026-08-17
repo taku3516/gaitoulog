@@ -4,6 +4,7 @@
 
 import { todayISO } from './calculations.js';
 import { createFramedImage, openImageShareDialog, shareText } from './share-report.js';
+import { COLOR } from './theme.js';
 
 function toDayNumber(dateStr) {
     const [year, month, day] = String(dateStr).split('-').map(Number);
@@ -173,26 +174,26 @@ export function createReportImage(report) {
                 const cardX = x + (index % 2) * (width / 2 + 10);
                 const cardY = y + Math.floor(index / 2) * (cardHeight + 20);
                 const cardWidth = width / 2 - 10;
-                ctx.fillStyle = '#f1f1f0';
+                ctx.fillStyle = COLOR.sunken;
                 ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
-                ctx.fillStyle = '#55595a';
+                ctx.fillStyle = COLOR.inkSecondary;
                 ctx.font = '500 25px "Noto Sans JP", sans-serif';
                 ctx.fillText(label, cardX + 26, cardY + 44);
-                ctx.fillStyle = '#1f4d63';
+                ctx.fillStyle = COLOR.accent;
                 ctx.font = '700 44px "Noto Sans JP", sans-serif';
                 ctx.fillText(value, cardX + 26, cardY + 98);
-                ctx.fillStyle = '#8a8f90';
+                ctx.fillStyle = COLOR.inkMuted;
                 ctx.font = '400 21px "Noto Sans JP", sans-serif';
                 ctx.fillText(delta, cardX + 26, cardY + 130);
             });
 
             const listY = y + cardHeight * 2 + 20 + 40;
-            ctx.fillStyle = '#1a1c1b';
+            ctx.fillStyle = COLOR.ink;
             ctx.font = '700 32px "Noto Sans JP", sans-serif';
             ctx.fillText('場所別の実績', x, listY);
 
             if (rows.length === 0) {
-                ctx.fillStyle = '#8a8f90';
+                ctx.fillStyle = COLOR.inkMuted;
                 ctx.font = '400 24px "Noto Sans JP", sans-serif';
                 ctx.fillText('この期間の活動記録はありません。', x, listY + 50);
                 return;
@@ -200,16 +201,16 @@ export function createReportImage(report) {
             const max = Math.max(...rows.map(row => row.distribution), 1);
             rows.forEach((row, index) => {
                 const rowY = listY + 58 + index * 76;
-                ctx.fillStyle = '#1a1c1b';
+                ctx.fillStyle = COLOR.ink;
                 ctx.font = '600 26px "Noto Sans JP", sans-serif';
                 const name = row.name.length > 24 ? `${row.name.slice(0, 23)}…` : row.name;
                 ctx.fillText(name, x, rowY);
-                ctx.fillStyle = '#55595a';
+                ctx.fillStyle = COLOR.inkSecondary;
                 ctx.font = '400 21px "Noto Sans JP", sans-serif';
                 ctx.fillText(`${row.count}回・${row.distribution.toLocaleString()}枚`, x, rowY + 28);
-                ctx.fillStyle = '#e0e0dd';
+                ctx.fillStyle = COLOR.line;
                 ctx.fillRect(x + 560, rowY - 22, width - 560, 22);
-                ctx.fillStyle = '#1f4d63';
+                ctx.fillStyle = COLOR.accent;
                 ctx.fillRect(x + 560, rowY - 22, (width - 560) * (row.distribution / max), 22);
             });
         },

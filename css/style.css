@@ -1,43 +1,60 @@
 /* ===================================================================
    街頭活動ログ — デザインシステム
 
+   配色の出典:
+     デジタル庁デザインシステム（DADS）のプリミティブカラー。
+     値は @digital-go-jp/design-tokens v2.0.1 に定義されたものを使う。
+     JS 側の定義は js/theme.js にあり、必ず同じ値に揃えること。
+
    方針:
    - 色は「地の色」「線」「文字」の3層＋アクセント1色に絞る。
      配色で情報を飾らず、余白と字面の強弱で階層をつくる。
    - グラデーションと色付きの影は使わない。面は境界線で区切る。
    - 角丸は用途ごとに固定（入力/ボタン 6px・面 10px・チップ 999px）。
+     ただしグラフの棒には角丸を付けない（長さの読み取りを妨げるため）。
    - 数値は等幅数字で桁を揃える。記録アプリなので数字が主役になる。
+   - 情報を色だけで伝えない。色に頼る箇所には必ず数値か語を添える。
    =================================================================== */
 
 :root {
-    /* 地 —— 冷たすぎない中間色。青みを抑えて紙に近づける */
-    --canvas: #f6f6f5;
+    /* 地 —— Solid Gray の 50。白い面を載せる下地 */
+    --canvas: #f2f2f2;
     --surface: #ffffff;
-    --surface-sunken: #f1f1f0;
-    --surface-hover: #ebebea;
+    --surface-sunken: #f2f2f2;
+    --surface-hover: #e6e6e6;
 
-    /* 線 —— 面の境界はすべてこの1本で引く */
-    --line: #e0e0dd;
-    --line-strong: #c8c8c4;
+    /* 線 —— 面の境界はすべてこの1本で引く。
+       --line-strong は白背景に対して 3:1 ちょうどの段階（gray-420）で、
+       入力欄の枠など「操作できる部品の輪郭」の下限にあたる */
+    --line: #cccccc;
+    --line-strong: #949494;
 
-    /* 文字 */
-    --ink: #1a1c1b;
-    --ink-secondary: #55595a;
-    --ink-muted: #8a8f90;
+    /* 文字 —— DADS で「白背景に対して 4.5:1 ちょうど」なのは gray-536(#767676)
+       だが、補助テキストは表のヘッダーやヒートマップの空セルなど
+       --surface-sunken(#f2f2f2) の上にも出る。その地の上では #767676 は
+       4.06:1 まで落ちるため、1段濃い gray-600 を既定にする。
+       （#666666 は白で 5.74:1、#f2f2f2 で 5.13:1） */
+    --ink: #1a1a1a;
+    --ink-secondary: #4d4d4d;
+    --ink-muted: #666666;
     --ink-inverse: #ffffff;
 
     /* アクセント —— 唯一の主張色。主要動作と数値の強調にだけ使う */
-    --accent: #1f4d63;
-    --accent-hover: #163a4c;
-    --accent-subtle: #eef2f4;
-    --accent-line: #c5d4db;
+    --accent: #0017c1;
+    --accent-hover: #00118f;
+    --accent-subtle: #e8f1fe;
+    --accent-line: #c5d7fb;
 
-    /* 意味を持つ色 —— 状態表示に限定して使う */
-    --positive: #2f6b46;
-    --caution: #8a5a12;
-    --caution-bg: #fdf4e3;
-    --critical: #9b2c2c;
-    --critical-bg: #fdf0ef;
+    /* 意味を持つ色 —— 状態表示に限定して使う。
+       いずれも白背景で 4.5:1 以上を満たす段階を選んでいる */
+    --positive: #197a4b;
+    /* orange-800(#c74700) だと --caution-bg の上で 4.29:1 にしかならないので、
+       バッジの地色に載せても足りる orange-900 を使う */
+    --caution: #ac3e00;
+    --caution-bg: #ffeee2;
+    --critical: #ce0000;
+    --critical-bg: #fdeeee;
+    --positive-bg: #e6f5ec;
 
     /* 余白 —— 4の倍数で統一 */
     --s1: 4px;
@@ -71,6 +88,21 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* キーボード操作時の位置表示。
+   内側に白・外側に黒の二重リングにすることで、白い面の上でも
+   アクセント色のボタンの上でも、どちらでも縁が見える。
+   個別の outline:none より後に書き、必ずこちらが勝つようにする。 */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--surface);
+}
 
 body {
     margin: 0;
@@ -271,7 +303,7 @@ main {
     line-height: 1.6;
 }
 .memo-import-result.visible { display: block; }
-.memo-import-result.success { color: var(--positive); background: #eef6f0; }
+.memo-import-result.success { color: var(--positive); background: var(--positive-bg); }
 .memo-import-result.caution { color: var(--caution); background: var(--caution-bg); }
 
 .form-error {
@@ -342,7 +374,7 @@ main {
 /* ===== 活動タイマー ===== */
 .timer-card { border-color: var(--line-strong); }
 .timer-card.is-running { border-color: var(--accent); background: var(--accent-subtle); }
-.timer-card.is-ended { border-color: var(--positive); background: #eef6f1; }
+.timer-card.is-ended { border-color: var(--positive); background: var(--positive-bg); }
 .timer-card-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
 .timer-card-row .section-note { margin: var(--s1) 0 0; }
 .timer-status-label { color: var(--accent); font-size: var(--t-xs); font-weight: 700; letter-spacing: .04em; }
@@ -367,10 +399,19 @@ main {
 .activity-map-controls, .activity-map-range { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
 .activity-map-canvas { height: min(55vh, 460px); min-height: 320px; border: 1px solid var(--line); border-radius: var(--r-control); }
 .activity-map-legend { display: flex; align-items: center; justify-content: center; gap: var(--s1); margin: var(--s2) 0; color: var(--ink-muted); font-size: var(--t-xs); }
-.activity-map-legend i { display: block; width: 22px; height: 8px; background: var(--accent); opacity: .3; }
+/* Leaflet の帰属表示。既定の水色リンク（#0078a8）は半透明の白地の上で
+   4.5:1 に届かないため、地を不透明にしてリンク色もアクセントに揃える */
+.leaflet-control-attribution {
+    background: var(--surface) !important;
+    color: var(--ink-secondary);
+}
+.leaflet-control-attribution a { color: var(--accent); }
+
+/* 活動量の凡例。色相は変えず、地図上の円と同じ濃さの段階で並べる */
+.activity-map-legend i { display: block; width: 22px; height: 8px; background: var(--accent); opacity: .25; }
 .activity-map-legend i:nth-of-type(2) { opacity: .45; }
-.activity-map-legend i:nth-of-type(3) { background: var(--caution); opacity: .65; }
-.activity-map-legend i:nth-of-type(4) { background: var(--critical); opacity: .85; }
+.activity-map-legend i:nth-of-type(3) { opacity: .65; }
+.activity-map-legend i:nth-of-type(4) { opacity: .85; }
 .share-modal-sheet { width: min(620px, 100%); }
 .share-preview { min-height: 300px; }
 .share-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); margin-top: var(--s3); }
@@ -604,6 +645,18 @@ main {
 }
 
 /* ===== ダッシュボード ===== */
+
+/* 集計の対象期間。数値だけを見せると「いつの数字か」が分からないため、
+   指標の並びより先に必ず示す */
+.dashboard-period {
+    margin: 0 0 var(--s4);
+    font-size: var(--t-sm);
+    line-height: 1.6;
+    color: var(--ink-secondary);
+    font-variant-numeric: tabular-nums;
+}
+.dashboard-period:empty { display: none; }
+
 .stat-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -616,16 +669,29 @@ main {
     border: 1px solid var(--line);
     border-radius: var(--r-surface);
 }
+/* ラベルを先、数値を後に置く。読む順（何の数字か → いくつか）と
+   DOMの順を合わせると、読み上げでも同じ順序で伝わる */
+.stat-card-label {
+    font-size: var(--t-xs);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink-secondary);
+}
 .stat-card-value {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    margin-top: 2px;
     font-size: 26px;
     font-weight: 700;
     line-height: 1.2;
     letter-spacing: -0.01em;
     color: var(--ink);
 }
-.stat-card-label {
-    margin-top: 1px;
+/* 単位は数値より小さく。桁の並びを崩さないよう別要素にする */
+.stat-card-unit {
     font-size: var(--t-xs);
+    font-weight: 600;
     color: var(--ink-muted);
 }
 
@@ -694,6 +760,24 @@ main {
     padding: 0 !important;
     text-align: center;
     font-size: var(--t-xs);
+    border: 1px solid var(--surface);
+}
+
+/* 濃淡の凡例。色の段階が何を指すかを数値で示す。
+   セル自体にも数値を入れてあるので、色が読めなくても表として成立する */
+.heat-legend {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    margin-top: var(--s2);
+    font-size: var(--t-xs);
+    color: var(--ink-muted);
+}
+.heat-legend-scale { display: flex; }
+.heat-legend-scale i {
+    display: block;
+    width: 26px;
+    height: 10px;
     border: 1px solid var(--surface);
 }
 

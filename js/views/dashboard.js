@@ -12,21 +12,18 @@ import {
 } from '../share-report.js';
 import { openReportDialog } from '../report.js';
 
+import { COLOR, SERIES, HEAT, heatInk, AXIS } from '../theme.js';
+
 const Chart = window.Chart;
 
-// グラフの配色。CSSのデザイントークンと同じ値を使い、画面全体で色を揃える。
+// 表のセルなど、Canvas以外でも使う色の別名。定義そのものは js/theme.js にある。
 const C = {
-    accent: '#1f4d63',
-    accentSoft: 'rgba(31, 77, 99, 0.10)',
-    secondary: '#7fa3b0',
-    tertiary: '#c08a2e',
-    ink: '#55595a',
-    line: '#e0e0dd',
-    sunken: '#f1f1f0',
-    faint: '#c8c8c4',
+    ink: COLOR.inkSecondary,
+    line: COLOR.line,
+    sunken: COLOR.sunken,
+    faint: COLOR.inkMuted,
+    accent: COLOR.accent,
 };
-// ヒートマップは色相を変えず、濃度だけで大小を表す
-const HEAT = ['#eef2f4', '#d3e0e5', '#a8c2cc', '#6b93a3', '#1f4d63'];
 let chartInstances = [];
 
 function destroyCharts() {
@@ -176,6 +173,46 @@ function chartHead(iconName, label, shareId) {
 function heatStep(value) {
     const rate = parseFloat(value);
     return rate >= 3.0 ? 4 : rate >= 2.0 ? 3 : rate >= 1.0 ? 2 : rate >= 0.5 ? 1 : 0;
+}
+
+// 濃淡の境目。凡例に出す値と heatStep の判定を1か所で持つ。
+const HEAT_BREAKS = ['0.5未満', '0.5〜', '1.0〜', '2.0〜', '3.0以上'];
+
+function heatLegend() {
+    return `<div class="heat-legend">
+        <span>配布係数</span>
+        <span class="heat-legend-scale">${HEAT.map((bg, i) => `<i style="background:${bg}" title="${HEAT_BREAKS[i]}"></i>`).join('')}</span>
+        <span>${HEAT_BREAKS[0]} → ${HEAT_BREAKS.at(-1)}</span>
+      </div>`;
+}
+
+/**
+ * グラフ共通のオプション。
+ *
+ * ガイドブックに沿って全グラフで守る点をここに集約する。
+ * - 量を表す軸は必ず0起点にする（途中から始めると差が誇張される）
+ * - 軸には単位を書く。「2.4」だけでは何の量か読み手に伝わらない
+ * - グリッドは目盛りの補助に留め、データより目立たせない
+ */
+function baseOptions({ unit = '', legend = false, extraScales = {} } = {}) {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: legend
+                ? { position: 'bottom', labels: { boxWidth: 12, padding: 12 } }
+                : { display: false },
+        },
+        scales: {
+            x: { grid: { display: false } },
+            y: {
+                beginAtZero: true,
+                title: { display: Boolean(unit), text: unit },
+                grid: { color: AXIS.grid },
+            },
+            ...extraScales,
+        },
+    };
 }
 
 export async function render(container) {
@@ -340,7 +377,13 @@ export async function render(container) {
 
         // 各ダッシュボードの共有画像。表示中の並び順・絞り込みをそのまま画像にする。
         const shareBuilders = {
-            'monthly': () => createChartImage(document.getElementById('chart-monthly'), '月別の推移', { subtitle: periodSubtitle }),
+            'monthly': () => createChartsImage([
+                { canvas: document.getElementById('chart-monthly'), caption: '配布枚数（枚）・活動回数（回）' },
+                { canvas: document.getElementById('chart-monthly-rate'), caption: '平均配布係数（枚/分）' },
+            ], '月別の推移', {
+                subtitle: periodSubtitle,
+                note: '配布係数は枚数・回数と単位が違うため、別のグラフに分けています。',
+            }),
             'location': () => createChartImage(document.getElementById('chart-location'), '場所別の配布枚数', { subtitle: periodSubtitle }),
             'weather': () => createChartImage(document.getElementById('chart-weather'), '天候別の平均配布係数', { subtitle: periodSubtitle }),
             'cumulative': () => createChartImage(document.getElementById('chart-cumulative'), '累積配布枚数と目標', {
@@ -372,7 +415,7 @@ export async function render(container) {
                 rows: revisitRows.map(row => [
                     { text: row.loc, bold: true },
                     row.latestDate || '-',
-                    { text: row.days == null ? '-' : `${row.days}日`, bold: true, color: row.days >= 60 ? '#9b2c2c' : row.days >= 30 ? '#8a5a12' : C.ink },
+                    { text: row.days == null ? '-' : `${row.days}日`, bold: true, color: row.days >= 60 ? COLOR.critical : row.days >= 30 ? COLOR.caution : C.ink },
                     row.count,
                     row.avgRate,
                 ]),
@@ -393,7 +436,7 @@ export async function render(container) {
                         if (!cell || cell.rates.length === 0) return { text: '-', bg: C.sunken, color: C.faint };
                         const rate = avg(cell.rates);
                         const step = heatStep(rate);
-                        return { text: rate, bg: HEAT[step], color: step >= 3 ? '#ffffff' : C.accent, bold: true };
+                        return { text: rate, bg: HEAT[step], color: heatInk(step), bold: true };
                     }),
                 ]),
                 maxRows: dayNames.length,
@@ -478,7 +521,13 @@ export async function render(container) {
         CHART_CONFIGS.forEach(c => { if (!chartOrder.includes(c.id)) chartOrder.push(c.id); });
 
         const blocks = {
-            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}">${chartHead('trend', '月別の推移', 'monthly')}<div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div></div>`,
+            'monthly': `<div class="chart-container toggle-target" data-id="monthly" style="${isHidden('monthly')}">${chartHead('trend', '月別の推移', 'monthly')}
+        <div class="chart-sub-title">配布枚数（枚）・活動回数（回）</div>
+        <div class="chart-canvas-wrapper"><canvas id="chart-monthly"></canvas></div>
+        <div class="chart-sub-title">平均配布係数（枚/分）</div>
+        <div class="chart-canvas-wrapper"><canvas id="chart-monthly-rate"></canvas></div>
+        <div class="text-xs text-muted">配布係数は枚数・回数と単位が違うため、同じ軸に重ねず別のグラフに分けています。</div>
+      </div>`,
             'cumulative': `<div class="chart-container toggle-target" data-id="cumulative" style="${isHidden('cumulative')}">${chartHead('trend', '累積配布枚数と目標', 'cumulative')}
         <div class="chart-controls">
           <input type="number" class="filter-select" id="goal-target" inputmode="numeric" min="0" placeholder="目標枚数" value="${goal.target}" aria-label="目標枚数">
@@ -527,9 +576,8 @@ export async function render(container) {
         if (!cell || cell.rates.length === 0) return `<td style="background:${C.sunken};color:${C.faint};">-</td>`;
         const a = avg(cell.rates);
         const step = heatStep(a);
-        const textColor = step >= 3 ? '#ffffff' : C.accent;
-        return `<td style="background:${HEAT[step]};color:${textColor};font-weight:700;">${a}</td>`;
-    }).join('')}</tr>`).join('')}</tbody></table></div></div>`,
+        return `<td style="background:${HEAT[step]};color:${heatInk(step)};font-weight:700;">${a}</td>`;
+    }).join('')}</tr>`).join('')}</tbody></table></div>${heatLegend()}</div>`,
             'summary-month': `<div class="chart-container toggle-target" data-id="summary-month" style="${isHidden('summary-month')}">${chartHead('calendar', '月別サマリー', 'summary-month')}<div class="data-table-wrapper">
         <table class="data-table"><thead><tr><th style="position:sticky;left:0;z-index:10;background:var(--surface);box-shadow: 1px 0 0 var(--line);">月</th><th>回数</th><th>時間(分)</th><th>配布枚数</th><th>平均係数</th></tr></thead>
         <tbody>${monthKeys.map(m => `<tr><td style="position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);box-shadow: 1px 0 0 var(--line);">${m}</td><td>${byMonth[m].count}</td><td>${byMonth[m].duration}</td><td>${byMonth[m].dist.toLocaleString()}</td><td>${avg(byMonth[m].rates)}</td></tr>`).join('')}</tbody></table></div></div>`,
@@ -566,9 +614,10 @@ export async function render(container) {
         <h2 class="section-title" style="margin:0;">${icon('chart', { size: 19 })}分析</h2>
         <div class="list-toolbar-actions"><button id="btn-report" class="btn btn-secondary btn-sm">${icon('note', { size: 15 })}レポート</button><button id="btn-share-dashboard" class="btn btn-primary btn-sm">${icon('upload', { size: 15 })}共有</button><button id="btn-prefs" class="btn btn-secondary btn-sm">${icon('settings', { size: 15 })}表示設定</button></div>
       </div>
-      <div class="stat-chip" style="margin-bottom:var(--s4);">
+      <div class="stat-chip" style="margin-bottom:var(--s2);">
            ${icon('user')}${store.getPoliticians().find(p => p.id === store.getCurrentPoliticianId())?.name || ''}
       </div>
+      <p class="dashboard-period">${periodSubtitle}</p>
 
       <div id="prefs-panel" style="display:none; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-control); padding:var(--s4); margin-bottom:var(--s4);">
         <div style="font-weight:600; margin-bottom:8px;">表示する項目を選択</div>
@@ -583,10 +632,15 @@ export async function render(container) {
       </div>
 
       <div class="stat-grid">
-        <div class="stat-card"><div class="stat-card-value">${totalCount}</div><div class="stat-card-label">活動回数</div></div>
-        <div class="stat-card"><div class="stat-card-value">${totalDuration}</div><div class="stat-card-label">合計時間(分)</div></div>
-        <div class="stat-card"><div class="stat-card-value">${totalDist.toLocaleString()}</div><div class="stat-card-label">合計枚数</div></div>
-        <div class="stat-card"><div class="stat-card-value">${avgRate}</div><div class="stat-card-label">平均係数</div></div>
+        ${[
+                ['活動回数', totalCount.toLocaleString(), '回'],
+                ['合計活動時間', totalDuration.toLocaleString(), '分'],
+                ['合計配布枚数', totalDist.toLocaleString(), '枚'],
+                ['平均配布係数', avgRate, '枚/分'],
+            ].map(([label, value, unit]) => `<div class="stat-card">
+            <div class="stat-card-label">${label}</div>
+            <div class="stat-card-value">${value}<span class="stat-card-unit">${unit}</span></div>
+          </div>`).join('')}
       </div>
 
       <div id="sortable-dashboard">
@@ -662,32 +716,89 @@ export async function render(container) {
 
     function initCharts() {
         destroyCharts();
-        Chart.defaults.color = C.ink;  Chart.defaults.borderColor = C.line;
+        Chart.defaults.color = AXIS.tick;
+        Chart.defaults.borderColor = AXIS.grid;
         Chart.defaults.font.family = "'Noto Sans JP', sans-serif";
+        // 棒の角は丸めない。丸めると先端が実際の値より手前で終わって見え、
+        // 長さで量を読み取るという棒グラフの前提が崩れる。
+        Chart.defaults.elements.bar.borderRadius = 0;
 
         if (!hiddenCharts.includes('monthly')) {
+            // 「配布枚数」「活動回数」「平均係数」を1枚に重ねると、右軸に
+            // 「回数」と「係数」という別々の単位が同居してしまい、線の交差に
+            // 意味が無くなる。量（枚・回）と比率（枚/分）で2枚に分ける。
             const mc = document.getElementById('chart-monthly');
             if (mc) {
                 const ch = new Chart(mc, {
-                    type: 'line', data: {
-                        labels: monthKeys, datasets: [
-                            { label: '配布枚数', data: monthKeys.map(m => byMonth[m].dist), borderColor: C.accent, backgroundColor: C.accentSoft, fill: true, tension: 0.3, yAxisID: 'y' },
-                            { label: '活動回数', data: monthKeys.map(m => byMonth[m].count), borderColor: C.secondary, fill: false, tension: 0.3, yAxisID: 'y1' },
-                            { label: '平均係数', data: monthKeys.map(m => { const r = byMonth[m].rates; return r.length > 0 ? parseFloat((r.reduce((a, b) => a + b, 0) / r.length).toFixed(2)) : 0; }), borderColor: C.tertiary, fill: false, tension: 0.3, yAxisID: 'y1' },
-                        ]
-                    }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } }, scales: { y: { type: 'linear', position: 'left', title: { display: true, text: '配布枚数' }, beginAtZero: true, ticks: { stepSize: 100, maxTicksLimit: 10 } }, y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '回数/係数' }, beginAtZero: true, ticks: { stepSize: 1, maxTicksLimit: 10 } } } }
-                }); chartInstances.push(ch);
+                    type: 'bar',
+                    data: {
+                        labels: monthKeys,
+                        datasets: [
+                            { label: '配布枚数', data: monthKeys.map(m => byMonth[m].dist), backgroundColor: SERIES.primary, yAxisID: 'y' },
+                            { type: 'line', label: '活動回数', data: monthKeys.map(m => byMonth[m].count), borderColor: SERIES.tertiary, backgroundColor: SERIES.tertiary, fill: false, tension: 0, yAxisID: 'y1' },
+                        ],
+                    },
+                    options: {
+                        ...baseOptions({ legend: true }),
+                        interaction: { mode: 'index', intersect: false },
+                        scales: {
+                            x: { grid: { display: false } },
+                            y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: '枚' }, grid: { color: AXIS.grid } },
+                            y1: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: '回' }, grid: { drawOnChartArea: false }, ticks: { precision: 0 } },
+                        },
+                    },
+                });
+                chartInstances.push(ch);
+            }
+
+            const rc = document.getElementById('chart-monthly-rate');
+            if (rc) {
+                const ch = new Chart(rc, {
+                    type: 'line',
+                    data: {
+                        labels: monthKeys,
+                        datasets: [{ label: '平均配布係数', data: monthKeys.map(m => avgNum(byMonth[m].rates)), borderColor: SERIES.primary, backgroundColor: SERIES.primary, fill: false, tension: 0 }],
+                    },
+                    options: baseOptions({ unit: '枚/分' }),
+                });
+                chartInstances.push(ch);
             }
         }
 
         if (!hiddenCharts.includes('location')) {
             const lc = document.getElementById('chart-location');
-            if (lc) { const le = Object.entries(byLocation).sort((a, b) => b[1].dist - a[1].dist); const ch = new Chart(lc, { type: 'bar', data: { labels: le.map(([n]) => n), datasets: [{ label: '配布枚_dist', data: le.map(([, d]) => d.dist), backgroundColor: C.accent, borderColor: C.accent, borderWidth: 1, borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } }); chartInstances.push(ch); }
+            if (lc) {
+                const le = Object.entries(byLocation).sort((a, b) => b[1].dist - a[1].dist);
+                const ch = new Chart(lc, {
+                    type: 'bar',
+                    data: { labels: le.map(([n]) => n), datasets: [{ label: '配布枚数', data: le.map(([, d]) => d.dist), backgroundColor: SERIES.primary }] },
+                    options: baseOptions({ unit: '枚' }),
+                });
+                chartInstances.push(ch);
+            }
         }
 
         if (!hiddenCharts.includes('weather')) {
             const wc = document.getElementById('chart-weather');
-            if (wc) { const we = Object.entries(byWeather); const wColors = { '晴': '#c08a2e', '曇': '#8a9296', '雨': '#4a7a94', '雪': '#b8c4c9', '未設定': C.faint }; const ch = new Chart(wc, { type: 'bar', data: { labels: we.map(([w]) => w), datasets: [{ label: '平均配布係数', data: we.map(([, d]) => d.rates.length > 0 ? parseFloat((d.rates.reduce((a, b) => a + b, 0) / d.rates.length).toFixed(2)) : 0), backgroundColor: we.map(([w]) => wColors[w] || '#555'), borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } } }); chartInstances.push(ch); }
+            if (wc) {
+                const we = Object.entries(byWeather);
+                // 同じ指標（平均配布係数）を天候ごとに並べているだけなので、棒は1色にする。
+                // 棒ごとに色を変えると、色の違いが量の違いを表すように誤解される。
+                // 「未設定」だけは記録が無い区分なので、灰色にして実測と区別する。
+                const ch = new Chart(wc, {
+                    type: 'bar',
+                    data: {
+                        labels: we.map(([w]) => w),
+                        datasets: [{
+                            label: '平均配布係数',
+                            data: we.map(([, d]) => avgNum(d.rates)),
+                            backgroundColor: we.map(([w]) => (w === '未設定' ? SERIES.neutral : SERIES.primary)),
+                        }],
+                    },
+                    options: baseOptions({ unit: '枚/分' }),
+                });
+                chartInstances.push(ch);
+            }
         }
         if (!hiddenCharts.includes('cumulative')) {
             const cc = document.getElementById('chart-cumulative');
@@ -696,9 +807,11 @@ export async function render(container) {
             if (note) note.textContent = view.note;
             if (cc) {
                 const datasets = [
-                    { label: '累積配布枚数', data: view.actual, borderColor: C.accent, backgroundColor: C.accentSoft, fill: true, tension: 0.2, pointRadius: 2 },
+                    { label: '累積配布枚数', data: view.actual, borderColor: SERIES.primary, backgroundColor: SERIES.primarySoft, fill: true, tension: 0, pointRadius: 2 },
                 ];
-                if (view.pace) datasets.push({ label: '目標ペース', data: view.pace, borderColor: C.tertiary, borderDash: [6, 6], fill: false, pointRadius: 0, tension: 0 });
+                // 目標ペースは実績と役割が違うので、色に加えて破線でも区別する。
+                // 色だけで分けると、印刷や色覚特性によっては見分けが付かない。
+                if (view.pace) datasets.push({ label: '目標ペース', data: view.pace, borderColor: SERIES.tertiary, borderDash: [6, 6], fill: false, pointRadius: 0, tension: 0 });
                 const labelOf = offset => dateFromOffset(view.start, offset);
                 const ch = new Chart(cc, {
                     type: 'line',
@@ -712,8 +825,8 @@ export async function render(container) {
                             tooltip: { callbacks: { title: items => labelOf(items[0].parsed.x) } },
                         },
                         scales: {
-                            x: { type: 'linear', min: 0, max: view.maxX || undefined, title: { display: true, text: '日付' }, ticks: { maxTicksLimit: 6, callback: value => labelOf(value) } },
-                            y: { beginAtZero: true, title: { display: true, text: '累積枚数' } },
+                            x: { type: 'linear', min: 0, max: view.maxX || undefined, title: { display: true, text: '日付' }, grid: { display: false }, ticks: { maxTicksLimit: 6, callback: value => labelOf(value) } },
+                            y: { beginAtZero: true, title: { display: true, text: '枚（累積）' }, grid: { color: AXIS.grid } },
                         },
                     },
                 });
@@ -728,9 +841,9 @@ export async function render(container) {
                     type: 'bar',
                     data: {
                         labels: rows.map(row => `${row.label}(${row.count}回)`),
-                        datasets: [{ label: '平均配布係数', data: rows.map(row => avgNum(row.rates)), backgroundColor: C.accent, borderRadius: 6 }],
+                        datasets: [{ label: '平均配布係数', data: rows.map(row => avgNum(row.rates)), backgroundColor: SERIES.primary }],
                     },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: { display: true, text: '枚/分' } } } },
+                    options: baseOptions({ unit: '枚/分' }),
                 });
                 chartInstances.push(ch);
             };
@@ -746,11 +859,19 @@ export async function render(container) {
                     data: {
                         labels: byDurationBand.map(band => `${band.label}(${band.count}回)`),
                         datasets: [
-                            { label: '平均配布係数', data: byDurationBand.map(band => avgNum(band.rates)), backgroundColor: C.accent, borderRadius: 6, yAxisID: 'y' },
-                            { type: 'line', label: '平均配布枚数', data: byDurationBand.map(band => band.avgDist), borderColor: C.tertiary, fill: false, tension: 0.3, yAxisID: 'y1' },
+                            { label: '平均配布係数', data: byDurationBand.map(band => avgNum(band.rates)), backgroundColor: SERIES.primary, yAxisID: 'y' },
+                            { type: 'line', label: '1回あたり配布枚数', data: byDurationBand.map(band => band.avgDist), borderColor: SERIES.tertiary, backgroundColor: SERIES.tertiary, fill: false, tension: 0, yAxisID: 'y1' },
                         ],
                     },
-                    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } }, scales: { y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: '枚/分' } }, y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: '枚' } } } },
+                    options: {
+                        ...baseOptions({ legend: true }),
+                        interaction: { mode: 'index', intersect: false },
+                        scales: {
+                            x: { grid: { display: false } },
+                            y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: '枚/分' }, grid: { color: AXIS.grid } },
+                            y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: '枚' } },
+                        },
+                    },
                 });
                 chartInstances.push(ch);
             }

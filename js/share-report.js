@@ -1,4 +1,5 @@
 // ===== 活動実績のテキスト・画像共有 =====
+import { COLOR, SERIES, PRIMITIVE } from './theme.js';
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => (
@@ -58,14 +59,14 @@ export function buildReportText(records) {
 // ===== 画像生成の共通部品 =====
 // 表・ランキング・地図など、Canvasを持たないダッシュボードも同じ体裁の画像にする。
 const IMG = {
-    bg: '#ffffff',
-    bar: '#1f4d63',
-    ink: '#1a1c1b',
-    muted: '#55595a',
-    faint: '#8a8f90',
-    line: '#e0e0dd',
-    sunken: '#f1f1f0',
-    accent: '#1f4d63',
+    bg: COLOR.surface,
+    bar: SERIES.primary,
+    ink: COLOR.ink,
+    muted: COLOR.inkSecondary,
+    faint: COLOR.inkMuted,
+    line: COLOR.line,
+    sunken: COLOR.sunken,
+    accent: COLOR.accent,
 };
 const IMG_PAD = 54;
 const IMG_MIN_WIDTH = 1080;
@@ -285,7 +286,14 @@ export async function createTableImage({ title, subtitle = '', columns, rows, no
     });
 }
 
-const RANK_COLORS = ['#c08a2e', '#8a9296', '#a0703a'];
+// 上位3件は金・銀・銅ではなく、主色の濃さで差をつける。
+// 順位は順序のある情報なので、色相を変えると順序が読めなくなる。
+// 背景の濃さに応じて数字の色を反転させ、どの順位でも文字を読めるようにする。
+const RANK_STYLES = [
+    { bg: PRIMITIVE.blue900, ink: COLOR.inkInverse },
+    { bg: PRIMITIVE.blue700, ink: COLOR.inkInverse },
+    { bg: PRIMITIVE.blue200, ink: COLOR.ink },
+];
 
 /**
  * ランキング表示のダッシュボードを画像にする。
@@ -306,11 +314,12 @@ export async function createRankingImage({ title, subtitle = '', items, note = '
         draw(ctx, x, y, width) {
             shown.forEach((item, index) => {
                 const rowY = y + index * rowHeight;
+                const rank = RANK_STYLES[index] || { bg: IMG.sunken, ink: IMG.muted };
                 ctx.beginPath();
-                ctx.fillStyle = RANK_COLORS[index] || IMG.line;
+                ctx.fillStyle = rank.bg;
                 ctx.arc(x + 30, rowY + 44, 27, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.fillStyle = index < 3 ? '#ffffff' : IMG.muted;
+                ctx.fillStyle = rank.ink;
                 ctx.font = imgFont(700, 26);
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
@@ -362,15 +371,15 @@ export async function createReportImage(records) {
     canvas.width = 1080;
     canvas.height = 1350;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#f6f6f5';
+    ctx.fillStyle = COLOR.canvas;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = '#1f4d63';
+    ctx.fillStyle = COLOR.accent;
     ctx.fillRect(0, 0, canvas.width, 18);
-    ctx.fillStyle = '#1a1c1b';
+    ctx.fillStyle = COLOR.ink;
     ctx.font = '700 58px "Noto Sans JP", sans-serif';
     ctx.fillText('街頭活動実績', 70, 120);
-    ctx.fillStyle = '#55595a';
+    ctx.fillStyle = COLOR.inkSecondary;
     ctx.font = '400 28px "Noto Sans JP", sans-serif';
     const range = summary.startDate === summary.endDate ? summary.startDate : `${summary.startDate} 〜 ${summary.endDate}`;
     ctx.fillText(range, 70, 170);
@@ -384,36 +393,36 @@ export async function createReportImage(records) {
     cards.forEach(([label, value], index) => {
         const x = 70 + (index % 2) * 475;
         const y = 230 + Math.floor(index / 2) * 170;
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = COLOR.surface;
         roundedRect(ctx, x, y, 435, 138, 18);
-        ctx.fillStyle = '#55595a';
+        ctx.fillStyle = COLOR.inkSecondary;
         ctx.font = '500 25px "Noto Sans JP", sans-serif';
         ctx.fillText(label, x + 28, y + 43);
-        ctx.fillStyle = '#1f4d63';
+        ctx.fillStyle = COLOR.accent;
         ctx.font = '700 43px "Noto Sans JP", sans-serif';
         ctx.fillText(value, x + 28, y + 102);
     });
 
-    ctx.fillStyle = '#1a1c1b';
+    ctx.fillStyle = COLOR.ink;
     ctx.font = '700 34px "Noto Sans JP", sans-serif';
     ctx.fillText('場所別実績', 70, 625);
     const top = summary.locations.slice(0, 6);
     const max = Math.max(...top.map(row => row.distribution), 1);
     top.forEach((row, index) => {
         const y = 685 + index * 92;
-        ctx.fillStyle = '#1a1c1b';
+        ctx.fillStyle = COLOR.ink;
         ctx.font = '600 27px "Noto Sans JP", sans-serif';
         const name = row.name.length > 25 ? `${row.name.slice(0, 24)}…` : row.name;
         ctx.fillText(name, 70, y);
-        ctx.fillStyle = '#55595a';
+        ctx.fillStyle = COLOR.inkSecondary;
         ctx.font = '400 22px "Noto Sans JP", sans-serif';
         ctx.fillText(`${row.count}回・${formatDuration(row.duration)}・${row.distribution.toLocaleString()}枚`, 70, y + 33);
-        ctx.fillStyle = '#e0e0dd';
+        ctx.fillStyle = COLOR.line;
         ctx.fillRect(620, y - 25, 360, 26);
-        ctx.fillStyle = '#1f4d63';
+        ctx.fillStyle = COLOR.accent;
         ctx.fillRect(620, y - 25, 360 * (row.distribution / max), 26);
     });
-    ctx.fillStyle = '#8a8f90';
+    ctx.fillStyle = COLOR.inkMuted;
     ctx.font = '400 20px "Noto Sans JP", sans-serif';
     ctx.fillText(`作成日 ${new Date().toLocaleDateString('ja-JP')}`, 70, 1300);
 

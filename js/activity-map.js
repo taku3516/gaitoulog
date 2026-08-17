@@ -2,6 +2,7 @@
 
 import * as spotStore from './spot-store.js';
 import { createFramedImage } from './share-report.js';
+import { COLOR, PRIMITIVE } from './theme.js';
 
 const CENTER = [35.6092, 139.7302];
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -41,12 +42,16 @@ function aggregate(records) {
     return [...result.values()];
 }
 
+// 活動量は大小のある1つの量なので、色相は変えずに濃さだけで示す。
+// 以前は 青→オレンジ→赤 と色相を変えていたが、この並びには大小の順序が
+// 無いため、どちらが多いのかを凡例なしに読み取れなかった。
+// 面積（半径）と濃さの二重表現にして、色が読めない場合でも大小が分かるようにする。
 function markerStyle(ratio) {
     return {
         radius: 7 + Math.sqrt(ratio) * 22,
-        color: '#1f4d63',
-        fillColor: ratio > .66 ? '#9b2c2c' : ratio > .33 ? '#c08a2e' : '#1f4d63',
-        fillOpacity: .30 + ratio * .55,
+        color: PRIMITIVE.blue1000,
+        fillColor: PRIMITIVE.blue900,
+        fillOpacity: .25 + ratio * .60,
     };
 }
 
@@ -221,7 +226,7 @@ export async function createActivityMapImage(title = '活動量マップ') {
             ctx.beginPath();
             ctx.rect(x, y, width, height);
             ctx.clip();
-            ctx.fillStyle = '#e9ece8';
+            ctx.fillStyle = COLOR.sunken;
             ctx.fillRect(x, y, width, height);
             images.forEach((image, index) => {
                 if (!image) return;
@@ -271,7 +276,7 @@ export async function createActivityMapImage(title = '活動量マップ') {
                 if (placed.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) continue;
                 placed.push(box);
                 ctx.strokeText(text, labelX, labelY);
-                ctx.fillStyle = '#1a1c1b';
+                ctx.fillStyle = COLOR.ink;
                 ctx.fillText(text, labelX, labelY);
             }
 
@@ -281,7 +286,7 @@ export async function createActivityMapImage(title = '活動量マップ') {
             const creditWidth = ctx.measureText(credit).width + 16;
             ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
             ctx.fillRect(x + width - creditWidth, y + height - 26, creditWidth, 26);
-            ctx.fillStyle = '#55595a';
+            ctx.fillStyle = COLOR.inkSecondary;
             ctx.fillText(credit, x + width - 8, y + height - 13);
             ctx.restore();
             ctx.textAlign = 'left';
