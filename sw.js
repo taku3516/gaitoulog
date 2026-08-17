@@ -1,4 +1,6 @@
-const CACHE_NAME = 'street-activity-log-v21';
+// v21 のキャッシュにはHTTPキャッシュ経由で取得した古い応答が混じっている
+// 可能性があるため、名前を変えて丸ごと作り直す
+const CACHE_NAME = 'street-activity-log-v22';
 
 // 認証・API通信はキャッシュしない（トークン付きの応答を残さないため）
 const NO_CACHE_HOSTS = [
@@ -73,7 +75,20 @@ self.addEventListener('fetch', (event) => {
 
     if (!cacheable) return; // ブラウザ既定の処理に任せる
 
-    event.respondWith(fetch(event.request).then(response => {
+    // ネットワーク優先だが、fetch をそのまま呼ぶとHTTPキャッシュを経由するため、
+    // Cache-Control が長いと「取りに行ったつもりで古い応答」を掴む。
+    // 実際にデプロイ済みの変更が端末に届かない事象が起きたので、
+    // 自分のオリジンの部品には cache:'no-cache' を付けて必ず確認させる。
+    // 'no-store' ではないので、内容が同じなら304で済み転送量は増えない。
+    //
+    // ナビゲーションは対象外にする。Request を init 付きで作り直すと
+    // mode が navigate から same-origin に変わり、リダイレクトの扱いが
+    // 変わってしまうため（ログインの復帰経路に影響し得る）。
+    // ページ本体の鮮度は firebase.json の no-cache ヘッダー側で担保する。
+    const revalidate = event.request.mode !== 'navigate' && url.origin === self.location.origin;
+    const request = revalidate ? new Request(event.request, { cache: 'no-cache' }) : event.request;
+
+    event.respondWith(fetch(request).then(response => {
         const clone = response.clone();
         caches.open(CACHE_NAME)
             .then(cache => cache.put(event.request, clone))
